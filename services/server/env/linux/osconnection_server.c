@@ -64,6 +64,9 @@ PVRSRV_ERROR OSConnectionPrivateDataInit(IMG_HANDLE *phOsPrivateData, IMG_PVOID 
 	ENV_CONNECTION_DATA *psEnvConnection;
 #if defined(SUPPORT_ION)
 	ENV_ION_CONNECTION_DATA *psIonConnection;
+    extern struct ion_client *lg115x_ion_client_create( \
+                                                       unsigned int heap_mask,\
+                                                       const char *name);
 #endif
 
 	*phOsPrivateData = OSAllocMem(sizeof(ENV_CONNECTION_DATA));
@@ -96,7 +99,7 @@ PVRSRV_ERROR OSConnectionPrivateDataInit(IMG_HANDLE *phOsPrivateData, IMG_PVOID 
 	psEnvConnection->psIonData->psIonDev = IonDevAcquire();
 	OSSNPrintf(psEnvConnection->psIonData->azIonClientName, ION_CLIENT_NAME_SIZE, "pvr_ion_client-%p-%d", *phOsPrivateData, OSGetCurrentProcessIDKM());
 	psEnvConnection->psIonData->psIonClient =
-		ion_client_create(psEnvConnection->psIonData->psIonDev,
+		lg115x_ion_client_create(0,
 						  psEnvConnection->psIonData->azIonClientName);
  
 	if (IS_ERR_OR_NULL(psEnvConnection->psIonData->psIonClient))
