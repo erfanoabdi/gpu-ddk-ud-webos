@@ -51,40 +51,43 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ion_support.h"
 #include "ion_sys.h"
 
-#include <linux/version.h>
-#include PVR_ANDROID_ION_HEADER
-#include PVR_ANDROID_ION_PRIV_HEADER
+#include <linux/ion.h>
+#include <../drivers/gpu/ion/ion_priv.h>
 #include <linux/err.h>
 #include <linux/slab.h>
 
 /* Just the system heaps are used by the generic implementation */
+#if 0
 static struct ion_platform_data generic_config = {
 	.nr = 2,
-	.heaps =
-		{
-			{
-				.type = ION_HEAP_TYPE_SYSTEM_CONTIG,
-				.name = "system_contig",
-				.id = ION_HEAP_TYPE_SYSTEM_CONTIG,
-			},
-			{
-				.type = ION_HEAP_TYPE_SYSTEM,
-				.name = "system",
-				.id = ION_HEAP_TYPE_SYSTEM,
+	.heaps = {
+				{
+					.type = ION_HEAP_TYPE_SYSTEM_CONTIG,
+					.name = "System contig",
+					.id = ION_HEAP_TYPE_SYSTEM_CONTIG,
+				},
+				{
+					.type = ION_HEAP_TYPE_SYSTEM,
+					.name = "System",
+					.id = ION_HEAP_TYPE_SYSTEM,
+				}
 			}
-		}
 };
 
-struct ion_heap **g_apsIonHeaps;
-struct ion_device *g_psIonDev;
+#endif
+#define LGE_EXT_USE_BUILTIN_ION	1
+//struct ion_heap **g_apsIonHeaps;
+//struct ion_device *g_psIonDev;
 
 PVRSRV_ERROR IonInit(void *phPrivateData)
 {
+    PVR_UNREFERENCED_PARAMETER(phPrivateData);
+#if defined(LGE_EXT_USE_BUILTIN_ION)
+	return PVRSRV_OK;
+#else
 	int uiHeapCount = generic_config.nr;
 	int uiError;
 	int i;
-
-	PVR_UNREFERENCED_PARAMETER(phPrivateData);
 
 	g_apsIonHeaps = kzalloc(sizeof(struct ion_heap *) * uiHeapCount, GFP_KERNEL);
 
@@ -122,17 +125,24 @@ failHeapCreate:
 	ion_device_destroy(g_psIonDev);
 
 	return PVRSRV_ERROR_OUT_OF_MEMORY;
+#endif
 }
 
 struct ion_device *IonDevAcquire(IMG_VOID)
 {
+#if defined(LGE_EXT_USE_BUILTIN_ION)
+	return NULL;
+#else
 	return g_psIonDev;
+#endif
 }
 
 IMG_VOID IonDevRelease(struct ion_device *psIonDev)
 {
+#if !defined(LGE_EXT_USE_BUILTIN_ION)
 	/* Nothing to do, sanity check the pointer we're passed back */
 	PVR_ASSERT(psIonDev == g_psIonDev);
+#endif
 }
 
 IMG_UINT32 IonPhysHeapID(IMG_VOID)
@@ -142,6 +152,7 @@ IMG_UINT32 IonPhysHeapID(IMG_VOID)
 
 IMG_VOID IonDeinit(IMG_VOID)
 {
+#if !defined(LGE_EXT_USE_BUILTIN_ION)
 	int uiHeapCount = generic_config.nr;
 	int i;
 
@@ -153,5 +164,6 @@ IMG_VOID IonDeinit(IMG_VOID)
 	}
 	kfree(g_apsIonHeaps);
 	ion_device_destroy(g_psIonDev);
+#endif
 }
 
