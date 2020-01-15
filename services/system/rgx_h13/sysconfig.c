@@ -100,17 +100,17 @@ static void LGE_PATCH_InitHardware(void)
 
 	org_data = __raw_readl(addr + 0x8);
 
-	printk("Step 1: Get GPU TOP Reg value (0x%x)\n", org_data);
+	//printk("Step 1: Get GPU TOP Reg value (0x%x)\n", org_data);
 
 	__raw_writel((org_data|0x40000000), addr + 0x8);
 
-	printk("Step 2: write LOW (0x%x)\n", (unsigned long)__raw_readl(addr + 0x8));
+	//printk("Step 2: write LOW (0x%x)\n", (unsigned long)__raw_readl(addr + 0x8));
 
 	udelay(100);
 
 	__raw_writel(org_data , addr + 0x8);
 
-	printk("Step 3: write HIGH (0x%x)\n", (unsigned long)__raw_readl(addr + 0x8));
+	//printk("Step 3: write HIGH (0x%x)\n", (unsigned long)__raw_readl(addr + 0x8));
 
 	udelay(100);
 
@@ -130,7 +130,7 @@ static PVRSRV_ERROR h13_system_pre_power_state(PVRSRV_SYS_POWER_STATE eNewPowerS
 #if defined(INCLUDE_LG_PATCH) && defined(CHIP_REV_B0)
 	if (eNewPowerState == PVRSRV_SYS_POWER_STATE_ON)
 	{
-		printk("__%s__%d__\n", __func__, __LINE__);
+		//printk("__%s__%d__\n", __func__, __LINE__);
 		LGE_PATCH_InitHardware();
 	}
 #endif
@@ -143,7 +143,7 @@ static PVRSRV_ERROR h13_system_pre_power_state(PVRSRV_SYS_POWER_STATE eNewPowerS
 */
 PVRSRV_ERROR SysCreateConfigData(PVRSRV_SYSTEM_CONFIG **ppsSysConfig)
 {
-	printk("__RGX:Build Date/Time (%s/%s)\n" ,__DATE__, __TIME__);
+	//printk("__RGX:Build Date/Time (%s/%s)\n" ,__DATE__, __TIME__);
 
 	/*
 	 * Setup information about physaical memory heap(s) we have
@@ -221,7 +221,7 @@ PVRSRV_ERROR SysCreateConfigData(PVRSRV_SYSTEM_CONFIG **ppsSysConfig)
 
 	/* Setup other system specific stuff */
 #if defined(SUPPORT_ION)
-	IonInit();
+	IonInit(NULL);
 #endif
 
 	*ppsSysConfig = &gsSysConfig;
@@ -241,11 +241,37 @@ IMG_VOID SysDestroyConfigData(PVRSRV_SYSTEM_CONFIG *psSysConfig)
 #endif
 }
 
-PVRSRV_ERROR SysDebugInfo(PVRSRV_SYSTEM_CONFIG *psSysConfig)
+PVRSRV_ERROR SysAcquireSystemData(IMG_HANDLE hSysData)
 {
-	PVR_UNREFERENCED_PARAMETER(psSysConfig);
+    PVR_UNREFERENCED_PARAMETER(hSysData);
+    
+    return PVRSRV_ERROR_NOT_SUPPORTED;
+}
 
-	return PVRSRV_OK;
+PVRSRV_ERROR SysReleaseSystemData(IMG_HANDLE hSysData)
+{
+    PVR_UNREFERENCED_PARAMETER(hSysData);
+    
+    return PVRSRV_ERROR_NOT_SUPPORTED;
+}
+
+PVRSRV_ERROR SysDebugInfo(PVRSRV_SYSTEM_CONFIG *psSysConfig, DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf)
+{
+    PVR_UNREFERENCED_PARAMETER(psSysConfig);
+    PVR_UNREFERENCED_PARAMETER(pfnDumpDebugPrintf);
+    return PVRSRV_OK;
+}
+
+// Do nothing
+PVRSRV_ERROR RgxResume(IMG_VOID)
+{
+    return PVRSRV_OK;
+}
+
+// Do nothing
+PVRSRV_ERROR RgxSuspend(IMG_VOID)
+{
+    return PVRSRV_OK;
 }
 /******************************************************************************
  End of file (sysconfig.c)
