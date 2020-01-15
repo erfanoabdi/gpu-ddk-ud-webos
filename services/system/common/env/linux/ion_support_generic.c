@@ -61,10 +61,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 static struct ion_platform_data generic_config = {
 	.nr = 2,
 	.heaps =
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,4,39))
-#else
-		(struct ion_platform_heap [])
-#endif
 		{
 			{
 				.type = ION_HEAP_TYPE_SYSTEM_CONTIG,
