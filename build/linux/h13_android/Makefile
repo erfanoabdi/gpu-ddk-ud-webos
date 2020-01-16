@@ -13,6 +13,8 @@ include ../common/android/features.mk
 PVR_SYSTEM := rgx_h13
 KERNEL_COMPONENTS := srvkm
 DRM_DC_MODULE ?= 0
+PVRSRV_NEED_PVR_DPF := 1
+SUPPORT_DISPLAY_CLASS = 0
 
 ifeq ($(DRM_DC_MODULE),1)
 DISPLAY_CONTROLLER := dc_drmexample
