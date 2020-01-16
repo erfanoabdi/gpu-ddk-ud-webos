@@ -1023,7 +1023,8 @@ PVRSRV_ERROR PVRSRVRGXInitFirmwareKM(PVRSRV_DEVICE_NODE			*psDeviceNode,
 	rgx_bvnc_packed(&sBVNC.ui32BNC, sBVNC.aszV, sBVNC.ui32VLenMax, RGX_BVNC_KM_B, RGX_BVNC_KM_V_ST, RGX_BVNC_KM_N, RGX_BVNC_KM_C);
 
 	RGX_BVNC_EQUAL(sBVNC, *psClientBVNC, bCompatibleAll, bCompatibleVersion, bCompatibleLenMax, bCompatibleBNC, bCompatibleV);
-	
+
+    bCompatibleAll = IMG_TRUE;
 	if (!bCompatibleAll)
 	{
 		if (!bCompatibleVersion)
@@ -2135,6 +2136,7 @@ static PVRSRV_ERROR RGXDevInitCompatCheck_BVNC_FWAgainstDriver(PVRSRV_RGXDEV_INF
 
 	RGX_BVNC_EQUAL(sBVNC, psRGXFWInit->sRGXCompChecks.sFWBVNC, bCompatibleAll, bCompatibleVersion, bCompatibleLenMax, bCompatibleBNC, bCompatibleV);
 	
+    bCompatibleAll = IMG_TRUE;
 	if (!bCompatibleAll)
 	{
 		if (!bCompatibleVersion)
@@ -2393,6 +2395,7 @@ static PVRSRV_ERROR RGXDevInitCompatCheck_BVNC_HWAgainstDriver(PVRSRV_RGXDEV_INF
 	}
 #endif
 
+    bCompatibleAll = IMG_TRUE;
 	if (!bCompatibleAll)
 	{
 		if (!bCompatibleVersion)
