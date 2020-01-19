@@ -125,6 +125,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(SUPPORT_KERNEL_HWPERF) || defined(SUPPORT_SHARED_SLC)
 #include "rgxapi_km.h"
 #endif
+#include "pvrversion.h"  //add by zxl
+
+#if defined(CONFIG_OF)
+#include <linux/of.h>
+#include <linux/of_device.h>
+#endif
 
 /*
  * DRVNAME is the name we use to register our driver.
@@ -219,6 +225,12 @@ static struct class *psPvrClass;
  */
 static int AssignedMajorNumber;
 
+static const struct of_device_id rockchip_gpu_dt_ids[] = {
+    { .compatible = "arm,rogue-G6110", },
+	{ .compatible = "arm,rk3368-gpu", },
+	{},
+};
+
 /*
  * These are the operations that will be associated with the device node
  * we create.
@@ -303,6 +315,7 @@ static LDM_DRV powervr_driver = {
 	.driver = {
 		.name	= DRVNAME,
 		.pm	= &powervr_dev_pm_ops,
+		.of_match_table = of_match_ptr(rockchip_gpu_dt_ids),
 	},
 #endif
 #if defined(LDM_PCI)
@@ -323,21 +336,43 @@ static LDM_DRV powervr_driver = {
 };
 
 LDM_DEV *gpsPVRLDMDev;
+EXPORT_SYMBOL(gpsPVRLDMDev);
 
 #if defined(LDM_PLATFORM)
 #if defined(MODULE) && !defined(PVR_USE_PRE_REGISTERED_PLATFORM_DEV)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,2,0))
-static void PVRSRVDeviceRelease(struct device unref__ *pDevice)
+/*static void PVRSRVDeviceRelease(struct device unref__ *pDevice)
 {
 }
 
-static struct platform_device powervr_device =
-{
+static struct platform_device powervr_device = {
 	.name			= DEVNAME,
-	.id			= -1,
+	.id				= -1,
 	.dev 			= {
 		.release	= PVRSRVDeviceRelease
 	}
+};*/
+//time:2012-09-08
+//move platform_device_register from devices.c to sgx
+static struct resource resources_sgx[] = {
+    [0] = {
+        .name  = "gpu_irq",
+        .start     = IRQ_GPU,
+        .end    = IRQ_GPU,
+        .flags  = IORESOURCE_IRQ,
+    },
+    [1] = {
+        .name   = "gpu_base",
+        .start  = RK30_GPU_PHYS ,
+        .end    = RK30_GPU_PHYS  + RK30_GPU_SIZE - 1,
+        .flags  = IORESOURCE_MEM,
+    },
+};
+static struct platform_device powervr_device = {
+    .name             = DEVNAME,
+    .id               = 0,
+    .num_resources    = ARRAY_SIZE(resources_sgx),
+    .resource         = resources_sgx,
 };
 #else
 static struct platform_device_info powervr_device_info =
@@ -545,7 +580,7 @@ static void PVRSRVDriverShutdown(LDM_DEV *pDevice)
 		 * processes trying to use the driver after it has been
 		 * shutdown.
 		 */
-		mutex_lock(&gPVRSRVLock);
+		OSAcquireBridgeLock();
 
 		(void) PVRSRVSetPowerStateKM(PVRSRV_SYS_POWER_STATE_OFF, IMG_TRUE);
 	}
@@ -580,7 +615,7 @@ static int PVRSRVDriverSuspend(struct device *pDevice)
 
 	if (!bDriverIsSuspended && !bDriverIsShutdown)
 	{
-		mutex_lock(&gPVRSRVLock);
+		OSAcquireBridgeLock();
 
 		if (PVRSRVSetPowerStateKM(PVRSRV_SYS_POWER_STATE_OFF, IMG_TRUE) == PVRSRV_OK)
 		{
@@ -589,7 +624,7 @@ static int PVRSRVDriverSuspend(struct device *pDevice)
 		}
 		else
 		{
-			mutex_unlock(&gPVRSRVLock);
+			OSReleaseBridgeLock();
 			res = -EINVAL;
 		}
 	}
@@ -627,7 +662,7 @@ static int PVRSRVDriverResume(struct device *pDevice)
 		if (PVRSRVSetPowerStateKM(PVRSRV_SYS_POWER_STATE_ON, IMG_TRUE) == PVRSRV_OK)
 		{
 			bDriverIsSuspended = IMG_FALSE;
-			mutex_unlock(&gPVRSRVLock);
+			OSReleaseBridgeLock();
 		}
 		else
 		{
@@ -674,7 +709,7 @@ static int PVRSRVOpen(struct inode unref__ * pInode, struct file *pFile)
 		return iRet;
 	}
 
-	mutex_lock(&gPVRSRVLock);
+	OSAcquireBridgeLock();
 
 	psPrivateData = OSAllocMem(sizeof(PVRSRV_FILE_PRIVATE_DATA));
 
@@ -701,11 +736,11 @@ static int PVRSRVOpen(struct inode unref__ * pInode, struct file *pFile)
 	list_add_tail(&psPrivateData->sDRMAuthListItem, &sDRMAuthListHead);
 #endif
 	PRIVATE_DATA(pFile) = psPrivateData;
-	mutex_unlock(&gPVRSRVLock);
+	OSReleaseBridgeLock();
 	return 0;
 
 err_unlock:	
-	mutex_unlock(&gPVRSRVLock);
+	OSReleaseBridgeLock();
 	module_put(THIS_MODULE);
 	return iRet;
 }
@@ -737,7 +772,7 @@ static int PVRSRVRelease(struct inode unref__ * pInode, struct file *pFile)
 {
 	PVRSRV_FILE_PRIVATE_DATA *psPrivateData;
 
-	mutex_lock(&gPVRSRVLock);
+	OSAcquireBridgeLock();
 
 #if defined(SUPPORT_DRM)
 	psPrivateData = (PVRSRV_FILE_PRIVATE_DATA *)pvPrivData;
@@ -758,7 +793,7 @@ static int PVRSRVRelease(struct inode unref__ * pInode, struct file *pFile)
 #endif
 	}
 
-	mutex_unlock(&gPVRSRVLock);
+	OSReleaseBridgeLock();
 	module_put(THIS_MODULE);
 #if defined(SUPPORT_DRM)
 	return;
@@ -775,7 +810,7 @@ CONNECTION_DATA *LinuxConnectionFromFile(struct file *pFile)
 {
 	PVRSRV_FILE_PRIVATE_DATA *psPrivateData = PRIVATE_DATA(pFile);
 
-	return psPrivateData->pvConnectionData;
+	return (psPrivateData == IMG_NULL) ? IMG_NULL : psPrivateData->pvConnectionData;
 }
 
 struct file *LinuxFileFromEnvConnection(ENV_CONNECTION_DATA *psEnvConnection)
@@ -904,6 +939,9 @@ static int __init PVRCore_Init(void)
 
 	PVR_TRACE(("PVRCore_Init"));
 
+	//zxl:print gpu version on boot time
+	printk("PVR_K: sys.gpvr.version=%s\n",RKVERSION);
+
 #if defined(SUPPORT_DRM)
 #if defined(PDUMP)
 	error = dbgdrv_init();
@@ -1029,7 +1067,7 @@ static int __init PVRCore_Init(void)
 #endif /* !defined(SUPPORT_DRM) */
 
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
-	eError = PVRFDSyncDeviceInitKM();
+	eError = pvr_sync_init();
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR, "PVRCore_Init: unable to create sync (%d)", eError));
@@ -1137,7 +1175,7 @@ static void __exit PVRCore_Cleanup(void)
 #endif
 
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
-	PVRFDSyncDeviceDeInitKM();
+	pvr_sync_deinit();
 #endif
 
 #if !defined(SUPPORT_DRM)

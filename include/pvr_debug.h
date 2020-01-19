@@ -78,9 +78,10 @@ extern "C" {
 #define PVRSRV_NEED_PVR_ASSERT
 #endif
 
-#if defined(PVRSRV_NEED_PVR_ASSERT) && !defined(PVRSRV_NEED_PVR_DPF)
+//zxl: Force open debug info.  gPVRDebugLevel is defined in pvr_debug.c
+//#if defined(PVRSRV_NEED_PVR_ASSERT) && !defined(PVRSRV_NEED_PVR_DPF)
 #define PVRSRV_NEED_PVR_DPF
-#endif
+//#endif
 
 #if !defined(PVRSRV_NEED_PVR_TRACE) && (defined(DEBUG) || defined(TIMING))
 #define PVRSRV_NEED_PVR_TRACE
@@ -256,7 +257,8 @@ IMG_IMPORT IMG_VOID IMG_CALLCONV PVRSRVDebugAssertFail(const IMG_CHAR *pszFile,
 	/* Translate the different log levels to separate macros
 	 * so they can each be compiled out.
 	 */
-#if defined(DEBUG)
+//zxl: Force open debug info.  gPVRDebugLevel is defined in pvr_debug.c
+#if 1
 	#define __PVR_DPF(lvl, ...) __PVR_DPF_ ## lvl (__FILE__, __LINE__, __VA_ARGS__)
 #else
 	#define __PVR_DPF(lvl, ...) __PVR_DPF_ ## lvl ("", 0, __VA_ARGS__)

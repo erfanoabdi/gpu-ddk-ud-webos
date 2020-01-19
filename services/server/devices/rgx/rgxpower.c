@@ -612,14 +612,29 @@ PVRSRV_ERROR RGXInitSLC(IMG_HANDLE hDevHandle)
 }
 #endif
 
-static IMG_VOID _RGXMakeTimeCorrData(PVRSRV_DEVICE_NODE *psDeviceNode, RGXFWIF_TIME_CORR *psTimeCorr)
+static IMG_VOID _RGXMakeTimeCorrData(PVRSRV_DEVICE_NODE *psDeviceNode)
 {
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
 	RGX_DATA			*psRGXData = (RGX_DATA*)psDeviceNode->psDevConfig->hDevData;
+	RGXFWIF_GPU_UTIL_FWCB *psGpuUtilFWCB = psDevInfo->psRGXFWIfGpuUtilFWCb;
+	RGXFWIF_TIME_CORR     *psTimeCorr;
+	IMG_UINT32            ui32NewIndex;
+
+	ui32NewIndex = psGpuUtilFWCB->ui32TimeCorrCurrent + 1;
+	if(ui32NewIndex == RGXFWIF_TIME_CORR_ARRAY_SIZE)
+	{
+		ui32NewIndex = 0;
+	}
+	psTimeCorr = &psGpuUtilFWCB->sTimeCorr[ui32NewIndex];
 
 	psTimeCorr->ui64CRTimeStamp = RGXReadHWTimerReg(psDevInfo);
 	psTimeCorr->ui64OSTimeStamp = OSClockns64();
 	psTimeCorr->ui32DVFSClock   = psRGXData->psRGXTimingInfo->ui32CoreClockSpeed;
+
+	/* Make sure the values are written to memory before updating the index of the current entry */
+	OSWriteMemoryBarrier();
+
+	psGpuUtilFWCB->ui32TimeCorrCurrent = ui32NewIndex;
 
 	PVR_DPF((PVR_DBG_MESSAGE,"RGXMakeTimeCorrData: Correlating OS timestamp %llu (ns) with CR timestamp %llu, GPU clock speed %uHz",
 			psTimeCorr->ui64OSTimeStamp, psTimeCorr->ui64CRTimeStamp, psTimeCorr->ui32DVFSClock));
@@ -818,7 +833,7 @@ PVRSRV_ERROR RGXPostPowerState (IMG_HANDLE				hDevHandle,
 			_RGXFWCBEntryAdd(psDeviceNode, ui64CRTimeStamp, RGXFWIF_GPU_UTIL_FWCB_TYPE_CRTIME);
 
 			/* Update the timer correlation data */
-			_RGXMakeTimeCorrData(psDeviceNode, &psDevInfo->psRGXFWIfGpuUtilFWCb->sTimeCorr);
+			_RGXMakeTimeCorrData(psDeviceNode);
 
 			/*
 				Run the RGX init script.
@@ -972,20 +987,28 @@ PVRSRV_ERROR RGXPostClockSpeedChange (IMG_HANDLE				hDevHandle,
 	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
 	RGX_DATA			*psRGXData = (RGX_DATA*)psDeviceNode->psDevConfig->hDevData;
 	PVRSRV_ERROR		eError = PVRSRV_OK;
-	RGXFWIF_KCCB_CMD 	sCOREClkSpeedChangeCmd;
 	RGXFWIF_TRACEBUF	*psFWTraceBuf = psDevInfo->psRGXFWIfTraceBuf;
+	IMG_UINT32 		ui32NewClockSpeed = psRGXData->psRGXTimingInfo->ui32CoreClockSpeed;
+
+	/* Update runtime configuration with the new value */
+	psDevInfo->psRGXFWIfRuntimeCfg->ui32CoreClockSpeed = ui32NewClockSpeed;
  
     if ((eCurrentPowerState != PVRSRV_DEV_POWER_STATE_OFF) 
 		&& (psFWTraceBuf->ePowState != RGXFWIF_POW_OFF))
 	{
+		RGXFWIF_KCCB_CMD	sCOREClkSpeedChangeCmd;
+
 		/* Update the timer correlation data */
-    	_RGXMakeTimeCorrData(psDeviceNode, &psDevInfo->psRGXFWIfGpuUtilFWCb->sTimeCorr);
+		_RGXMakeTimeCorrData(psDeviceNode);
 
     	sCOREClkSpeedChangeCmd.eCmdType = RGXFWIF_KCCB_CMD_CORECLKSPEEDCHANGE;
-		sCOREClkSpeedChangeCmd.uCmdData.sCORECLKSPEEDCHANGEData.ui32NewClockSpeed = psRGXData->psRGXTimingInfo->ui32CoreClockSpeed;
+		sCOREClkSpeedChangeCmd.uCmdData.sCORECLKSPEEDCHANGEData.ui32NewClockSpeed = ui32NewClockSpeed;
+
+		/* Ensure the new clock speed is written to memory before requesting the FW to read it */
+		OSMemoryBarrier();
 
 		/* Store new DVFS freq into DVFS history entry */
-		psDevInfo->psGpuDVFSHistory->aui32DVFSClockCB[psDevInfo->psGpuDVFSHistory->ui32CurrentDVFSId] = psRGXData->psRGXTimingInfo->ui32CoreClockSpeed;
+		psDevInfo->psGpuDVFSHistory->aui32DVFSClockCB[psDevInfo->psGpuDVFSHistory->ui32CurrentDVFSId] = ui32NewClockSpeed;
 
 		PDUMPCOMMENT("Scheduling CORE clock speed change command");
 
@@ -1126,31 +1149,54 @@ PVRSRV_ERROR RGXDustCountChange(IMG_HANDLE				hDevHandle,
 */
 PVRSRV_ERROR RGXAPMLatencyChange(IMG_HANDLE				hDevHandle,
 				IMG_UINT32				ui32ActivePMLatencyms,
-				IMG_BOOL				bPersistent)
+				IMG_BOOL				bActivePMLatencyPersistant)
 {
 
 	PVRSRV_DEVICE_NODE	*psDeviceNode = hDevHandle;
+	PVRSRV_RGXDEV_INFO	*psDevInfo = psDeviceNode->pvDevice;
 	PVRSRV_ERROR		eError;
-	RGXFWIF_KCCB_CMD	sActivePMLatencyChange;
+	RGXFWIF_RUNTIME_CFG	*psRuntimeCfg = psDevInfo->psRGXFWIfRuntimeCfg;
+	PVRSRV_DEV_POWER_STATE	ePowerState;
 
-	sActivePMLatencyChange.eCmdType = RGXFWIF_KCCB_CMD_POW;
-	sActivePMLatencyChange.uCmdData.sPowData.ePowType = RGXFWIF_POW_APM_LATENCY_CHANGE;
-	sActivePMLatencyChange.uCmdData.sPowData.uPoweReqData.sActivePMLatency.ui32ActivePMLatencyms = ui32ActivePMLatencyms;
-	sActivePMLatencyChange.uCmdData.sPowData.uPoweReqData.sActivePMLatency.bPersistent = bPersistent;
-
-	PDUMPCOMMENT("Scheduling command to change APM latency to %u", ui32ActivePMLatencyms);
-	eError = RGXScheduleCommand(psDeviceNode->pvDevice,
-				RGXFWIF_DM_GP,
-				&sActivePMLatencyChange,
-				sizeof(sActivePMLatencyChange),
-				0);
-
+	eError = PVRSRVPowerLock();
 	if (eError != PVRSRV_OK)
 	{
-		PDUMPCOMMENT("Scheduling command to change APM latency failed. Error:%u", eError);
-		PVR_DPF((PVR_DBG_ERROR, "RGXAPMLatencyChange: Scheduling KCCB to change APM latency failed. Error:%u", eError));
+		PVR_DPF((PVR_DBG_ERROR,"RGXAPMLatencyChange: Failed to acquire power lock"));
 		return eError;
 	}
+
+	/* Update runtime configuration with the new values */
+	psRuntimeCfg->ui32ActivePMLatencyms = ui32ActivePMLatencyms;
+	psRuntimeCfg->bActivePMLatencyPersistant = bActivePMLatencyPersistant;
+
+	eError = PVRSRVGetDevicePowerState(psDeviceNode->sDevId.ui32DeviceIndex, &ePowerState);
+
+	if ((eError == PVRSRV_OK) && (ePowerState != PVRSRV_DEV_POWER_STATE_OFF))
+	{
+		RGXFWIF_KCCB_CMD	sActivePMLatencyChange;
+		sActivePMLatencyChange.eCmdType = RGXFWIF_KCCB_CMD_POW;
+		sActivePMLatencyChange.uCmdData.sPowData.ePowType = RGXFWIF_POW_APM_LATENCY_CHANGE;
+		sActivePMLatencyChange.uCmdData.sPowData.uPoweReqData.ui32ActivePMLatencyms = ui32ActivePMLatencyms;
+
+		/* Ensure the new APM latency is written to memory before requesting the FW to read it */
+		OSMemoryBarrier();
+
+		PDUMPCOMMENT("Scheduling command to change APM latency to %u", ui32ActivePMLatencyms);
+		eError = RGXSendCommandRaw(psDeviceNode->pvDevice,
+					RGXFWIF_DM_GP,
+					&sActivePMLatencyChange,
+					sizeof(sActivePMLatencyChange),
+					0);
+
+		if (eError != PVRSRV_OK)
+		{
+			PDUMPCOMMENT("Scheduling command to change APM latency failed. Error:%u", eError);
+			PVR_DPF((PVR_DBG_ERROR, "RGXAPMLatencyChange: Scheduling KCCB to change APM latency failed. Error:%u", eError));
+			return eError;
+		}
+	}
+
+	PVRSRVPowerUnlock();
 
 	return PVRSRV_OK;
 }

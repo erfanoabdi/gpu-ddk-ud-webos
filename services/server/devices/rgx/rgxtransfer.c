@@ -274,7 +274,8 @@ PVRSRV_ERROR PVRSRVRGXCreateTransferContextKM(CONNECTION_DATA		*psConnection,
 
 	/* Allocate cleanup sync */
 	eError = SyncPrimAlloc(psDeviceNode->hSyncPrimContext,
-						   &psTransferContext->psCleanupSync);
+						   &psTransferContext->psCleanupSync,
+						   "transfer context cleanup");
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,"PVRSRVCreateTransferContextKM: Failed to allocate cleanup sync (0x%x)",
@@ -366,6 +367,14 @@ PVRSRV_ERROR PVRSRVRGXDestroyTransferContextKM(RGX_SERVER_TQ_CONTEXT *psTransfer
 	PVRSRV_ERROR eError;
 	PVRSRV_RGXDEV_INFO *psDevInfo = psTransferContext->psDeviceNode->pvDevice;
 
+	/* remove node from list before calling destroy - as destroy, if successful
+	 * will invalidate the node
+	 * must be re-added if destroy fails
+	 */
+	OSWRLockAcquireWrite(psDevInfo->hTransferCtxListLock, DEVINFO_TRANSFERLIST);
+	dllist_remove_node(&(psTransferContext->sListNode));
+	OSWRLockReleaseWrite(psDevInfo->hTransferCtxListLock);
+
 	if (psTransferContext->ui32Flags & RGX_SERVER_TQ_CONTEXT_FLAGS_2D)
 	{
 		eError = _Destroy2DTransferContext(&psTransferContext->s2DData,
@@ -392,10 +401,6 @@ PVRSRV_ERROR PVRSRVRGXDestroyTransferContextKM(RGX_SERVER_TQ_CONTEXT *psTransfer
 		psTransferContext->ui32Flags &= ~RGX_SERVER_TQ_CONTEXT_FLAGS_3D;
 	}
 
-	OSWRLockAcquireWrite(psDevInfo->hTransferCtxListLock, DEVINFO_TRANSFERLIST);
-	dllist_remove_node(&(psTransferContext->sListNode));
-	OSWRLockReleaseWrite(psDevInfo->hTransferCtxListLock);
-
 	DevmemFwFree(psTransferContext->psFWFrameworkMemDesc);
 	SyncPrimFree(psTransferContext->psCleanupSync);
 
@@ -405,6 +410,9 @@ PVRSRV_ERROR PVRSRVRGXDestroyTransferContextKM(RGX_SERVER_TQ_CONTEXT *psTransfer
 
 fail_destroy2d:
 fail_destroy3d:
+	OSWRLockAcquireWrite(psDevInfo->hTransferCtxListLock, DEVINFO_TRANSFERLIST);
+	dllist_add_to_tail(&(psDevInfo->sTransferCtxtListHead), &(psTransferContext->sListNode));
+	OSWRLockReleaseWrite(psDevInfo->hTransferCtxListLock);
 	PVR_ASSERT(eError != PVRSRV_OK);
 	return eError;
 }
@@ -425,7 +433,7 @@ PVRSRV_ERROR PVRSRVRGXSubmitTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContext,
 									   IMG_UINT32				**papaui32ServerSyncFlags,
 									   SERVER_SYNC_PRIMITIVE	***papapsServerSyncs,
 									   IMG_UINT32				ui32NumFenceFDs,
-									   IMG_INT32				*paui32FenceFDs,
+									   IMG_INT32				*pai32FenceFDs,
 									   IMG_UINT32				*paui32FWCommandSize,
 									   IMG_UINT8				**papaui8FWCommand,
 									   IMG_UINT32				*pui32TQPrepareFlags,
@@ -460,7 +468,7 @@ PVRSRV_ERROR PVRSRVRGXSubmitTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContext,
 
 
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
-	FDMERGE_DATA sFDMergeData = {0};
+	struct pvr_sync_append_data *psFDFenceData = NULL;
 #endif
 
 	if (ui32PrepareCount == 0)
@@ -603,22 +611,28 @@ PVRSRV_ERROR PVRSRVRGXSubmitTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContext,
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
 	if (ui32NumFenceFDs)
 	{
-		eError = 
-		  PVRFDSyncMergeFencesKM(&ui32IntClientFenceCount,
-								 &pauiIntFenceUFOAddress,
-								 &paui32IntFenceValue,
-								 &ui32IntClientUpdateCount,
-								 &pauiIntUpdateUFOAddress,
-								 &paui32IntUpdateValue,
-								 "TQ",
-								 IMG_TRUE,
-								 ui32NumFenceFDs,
-								 paui32FenceFDs,
-								 &sFDMergeData);
+		eError =
+		  pvr_sync_append_fences("TQ",
+		                               ui32NumFenceFDs,
+		                               pai32FenceFDs,
+		                               -1,
+		                               ui32IntClientUpdateCount,
+		                               pauiIntUpdateUFOAddress,
+		                               paui32IntUpdateValue,
+		                               ui32IntClientFenceCount,
+		                               pauiIntFenceUFOAddress,
+		                               paui32IntFenceValue,
+		                               &psFDFenceData);
 		if (eError != PVRSRV_OK)
 		{
 			goto fail_syncinit;
 		}
+		ui32IntClientUpdateCount = psFDFenceData->nr_updates;
+		pauiIntUpdateUFOAddress = psFDFenceData->update_ufo_addresses;
+		paui32IntUpdateValue = psFDFenceData->update_values;
+		ui32IntClientFenceCount = psFDFenceData->nr_checks;
+		pauiIntFenceUFOAddress = psFDFenceData->check_ufo_addresses;
+		paui32IntFenceValue = psFDFenceData->check_values;
 	}
 #endif
 
@@ -800,22 +814,13 @@ PVRSRV_ERROR PVRSRVRGXSubmitTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContext,
 	}
 
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
+#if defined(NO_HARDWARE)
+	pvr_sync_nohw_complete_fences(psFDFenceData);
+#endif
 	/*
 		Free the merged sync memory if required
 	*/
-	PVRFDSyncMergeFencesCleanupKM(&sFDMergeData);
-
-#if defined(NO_HARDWARE)
-    for (i = 0; i < ui32NumFenceFDs; i++) 
-    {    
-		eError = PVRFDSyncNoHwUpdateFenceKM(paui32FenceFDs[i]);
-        if (eError != PVRSRV_OK)
-        {    
-            PVR_DPF((PVR_DBG_ERROR, "%s: Failed nohw update on fence fd=%d (%s)",
-                     __func__, paui32FenceFDs[i], PVRSRVGetErrorStringKM(eError)));
-        }    
-    }    
-#endif
+	pvr_sync_free_append_fences_data(psFDFenceData);
 #endif
 
 #if !defined(WDDM)
@@ -837,9 +842,17 @@ fail_3dcmdacquire:
 fail_initcmd:
 
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
-	PVRFDSyncMergeFencesCleanupKM(&sFDMergeData);
-
 fail_syncinit:
+	/* Relocated cleanup here as the loop could fail after the first iteration
+	 * at the above goto tags at which point the psFDCheckData memory would
+	 * have been allocated.
+	 */
+	if (psFDFenceData)
+	{
+		pvr_sync_rollback_append_fences(psFDFenceData);
+		pvr_sync_free_append_fences_data(psFDFenceData);
+		psFDFenceData = NULL;
+	}
 #endif
 
 fail_pdumpcheck:
@@ -921,6 +934,36 @@ IMG_VOID CheckForStalledTransferCtxt(PVRSRV_RGXDEV_INFO *psDevInfo,
 	OSWRLockReleaseRead(psDevInfo->hTransferCtxListLock);
 }
 
+static IMG_BOOL CheckForStalledClientTransferCtxtCommand(PDLLIST_NODE psNode, IMG_PVOID pvCallbackData)
+{
+	PVRSRV_ERROR *peError = (PVRSRV_ERROR*)pvCallbackData;
+	RGX_SERVER_TQ_CONTEXT 		*psCurrentServerTransferCtx = IMG_CONTAINER_OF(psNode, RGX_SERVER_TQ_CONTEXT, sListNode);
+	RGX_SERVER_TQ_2D_DATA		*psTransferCtx2DData = &(psCurrentServerTransferCtx->s2DData);
+	RGX_SERVER_COMMON_CONTEXT	*psCurrentServerTQ2DCommonCtx = psTransferCtx2DData->psServerCommonContext;
+	RGX_SERVER_TQ_3D_DATA		*psTransferCtx3DData = &(psCurrentServerTransferCtx->s3DData);
+	RGX_SERVER_COMMON_CONTEXT	*psCurrentServerTQ3DCommonCtx = psTransferCtx3DData->psServerCommonContext;
+
+	if (PVRSRV_ERROR_CCCB_STALLED == CheckStalledClientCommonContext(psCurrentServerTQ2DCommonCtx))
+	{
+		*peError = PVRSRV_ERROR_CCCB_STALLED;
+	}
+	if (PVRSRV_ERROR_CCCB_STALLED == CheckStalledClientCommonContext(psCurrentServerTQ3DCommonCtx))
+	{
+		*peError = PVRSRV_ERROR_CCCB_STALLED;
+	}
+
+	return IMG_TRUE;
+}
+IMG_BOOL CheckForStalledClientTransferCtxt(PVRSRV_RGXDEV_INFO *psDevInfo)
+{
+	PVRSRV_ERROR eError = PVRSRV_OK;
+	OSWRLockAcquireRead(psDevInfo->hTransferCtxListLock, DEVINFO_TRANSFERLIST);
+	dllist_foreach_node(&(psDevInfo->sTransferCtxtListHead), 
+						CheckForStalledClientTransferCtxtCommand, &eError);
+	OSWRLockReleaseRead(psDevInfo->hTransferCtxListLock);
+	return (PVRSRV_ERROR_CCCB_STALLED == eError)? IMG_TRUE: IMG_FALSE;
+}
+
 PVRSRV_ERROR PVRSRVRGXKickSyncTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContext,
 									   IMG_UINT32				ui32ClientFenceCount,
 									   PRGXFWIF_UFO_ADDR		*pauiClientFenceUFOAddress,
@@ -932,7 +975,7 @@ PVRSRV_ERROR PVRSRVRGXKickSyncTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContex
 									   IMG_UINT32				*pui32ServerSyncFlags,
 									   SERVER_SYNC_PRIMITIVE	**pasServerSyncs,
 									   IMG_UINT32				ui32NumFenceFDs,
-									   IMG_INT32				*paui32FenceFDs,
+									   IMG_INT32				*pai32FenceFDs,
 									   IMG_UINT32				ui32TQPrepareFlags)
 {
 	PVRSRV_ERROR                eError;
@@ -942,7 +985,7 @@ PVRSRV_ERROR PVRSRVRGXKickSyncTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContex
 	IMG_BOOL                    bPDumpContinuous;
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
 	/* Android fd sync update info */
-	FDMERGE_DATA                sFDMergeData = {0};
+	struct pvr_sync_append_data *psFDFenceData = NULL;
 #endif /* defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC) */
 
 
@@ -969,22 +1012,29 @@ PVRSRV_ERROR PVRSRVRGXKickSyncTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContex
 	/* Android FD fences are hardcoded to updates (IMG_TRUE below), Fences go to the TA and updates to the 3D */
 	if (ui32NumFenceFDs)
 	{
-		eError = 
-		  PVRFDSyncMergeFencesKM(&ui32ClientFenceCount,
-								 &pauiClientFenceUFOAddress,
-								 &paui32ClientFenceValue,
-								 &ui32ClientUpdateCount,
-								 &pauiClientUpdateUFOAddress,
-								 &paui32ClientUpdateValue,
-								 "TQ",
-								 IMG_TRUE,
-								 ui32NumFenceFDs,
-								 paui32FenceFDs,
-								 &sFDMergeData);
+		/* Assumes there will only ever be one fence to update. Ignores others. */
+		eError =
+		  pvr_sync_append_fences("TQ",
+		                         0,
+		                         NULL,
+		                         *pai32FenceFDs,
+		                         ui32ClientUpdateCount,
+		                         pauiClientUpdateUFOAddress,
+		                         paui32ClientUpdateValue,
+		                         ui32ClientFenceCount,
+		                         pauiClientFenceUFOAddress,
+		                         paui32ClientFenceValue,
+		                         &psFDFenceData);
 		if (eError != PVRSRV_OK)
 		{
 			goto fail_fdsync;
 		}
+		ui32ClientUpdateCount = psFDFenceData->nr_updates;
+		pauiClientUpdateUFOAddress = psFDFenceData->update_ufo_addresses;
+		paui32ClientUpdateValue = psFDFenceData->update_values;
+		ui32ClientFenceCount = psFDFenceData->nr_checks;
+		pauiClientFenceUFOAddress = psFDFenceData->check_ufo_addresses;
+		paui32ClientFenceValue = psFDFenceData->check_values;
 	}
 #endif
 
@@ -1010,26 +1060,19 @@ PVRSRV_ERROR PVRSRVRGXKickSyncTransferKM(RGX_SERVER_TQ_CONTEXT	*psTransferContex
 		goto fail_kicksync;
 	}
 
-#if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC) && defined(NO_HARDWARE)
-	{
-		IMG_UINT32	i;
-
-		for (i = 0; i < ui32NumFenceFDs; i++) 
-		{    
-			eError = PVRFDSyncNoHwUpdateFenceKM(paui32FenceFDs[i]);
-			if (eError != PVRSRV_OK)
-			{    
-				PVR_DPF((PVR_DBG_ERROR, "%s: Failed nohw update on fence fd=%d (%s)",
-						 __func__, paui32FenceFDs[i], PVRSRVGetErrorStringKM(eError)));
-			}    
-		}
-	}
+#if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
+#if defined(NO_HARDWARE)
+	pvr_sync_nohw_complete_fences(psFDFenceData);
+#endif /* NO_HARDWARE */
+	pvr_sync_free_append_fences_data(psFDFenceData);
 #endif /* PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC */
 
-fail_kicksync:
+	return eError;
 
+fail_kicksync:
 #if defined(PVR_ANDROID_NATIVE_WINDOW_HAS_SYNC)
-	PVRFDSyncMergeFencesCleanupKM(&sFDMergeData);
+	pvr_sync_rollback_append_fences(psFDFenceData);
+	pvr_sync_free_append_fences_data(psFDFenceData);
 fail_fdsync:
 #endif
 

@@ -23,7 +23,7 @@ ifeq ($(ARCH),i386)
  include $(compilers)/i386-linux-gnu.mk
 else
  TARGET_PRIMARY_ARCH := target_x86_64
- ifneq ($(MULTIARCH),)
+ ifeq ($(MULTIARCH),1)
   TARGET_SECONDARY_ARCH := target_i686
  endif # MULTIARCH
 endif

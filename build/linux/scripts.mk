@@ -331,7 +331,7 @@ $(RELATIVE_OUT)/install.sh: $(install_sh_template)
 	$(ECHO) 's/\[PVRVERSION\]/$(subst /,\/,$(PVRVERSION))/g;'           > $(RELATIVE_OUT)/install.sh.sed
 	$(ECHO) 's/\[PVRBUILD\]/$(BUILD)/g;'                               >> $(RELATIVE_OUT)/install.sh.sed
 	$(ECHO) 's/\[PRIMARY_ARCH\]/$(TARGET_PRIMARY_ARCH)/g;'             >> $(RELATIVE_OUT)/install.sh.sed
-	$(ECHO) 's/\[ARCHITECTURES\]/$(TARGET_ALL_ARCH) target_neutral/g;' >> $(RELATIVE_OUT)/install.sh.sed
+	$(ECHO) 's/\[ARCHITECTURES\]/$(TARGET_ALL_ARCH)/g;' >> $(RELATIVE_OUT)/install.sh.sed
 	$(ECHO) 's/\[LWS_PREFIX\]/$(subst /,\/,$(LWS_PREFIX))/g;'          >> $(RELATIVE_OUT)/install.sh.sed
 	$(ECHO) 's/\[SHLIB_DESTDIR\]/$(subst /,\/,$(SHLIB_DESTDIR))/g;'    >> $(RELATIVE_OUT)/install.sh.sed
 	@sed -f $(RELATIVE_OUT)/install.sh.sed $< > $@

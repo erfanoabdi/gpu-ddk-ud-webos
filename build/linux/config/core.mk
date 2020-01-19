@@ -297,12 +297,10 @@ ifeq ($(SUPPORT_LINUX_USING_WORKQUEUES),1)
 override PVR_LINUX_USING_WORKQUEUES := 1
 override PVR_LINUX_MISR_USING_PRIVATE_WORKQUEUE := 1
 override PVR_LINUX_TIMERS_USING_WORKQUEUES := 1
-override SYS_CUSTOM_POWERLOCK_WRAP := 1
 else ifeq ($(SUPPORT_LINUX_USING_SHARED_WORKQUEUES),1)
 override PVR_LINUX_USING_WORKQUEUES := 1
 override PVR_LINUX_MISR_USING_WORKQUEUE := 1
 override PVR_LINUX_TIMERS_USING_SHARED_WORKQUEUE := 1
-override SYS_CUSTOM_POWERLOCK_WRAP := 1
 endif
 
 ifeq ($(NO_HARDWARE),1)
@@ -327,7 +325,10 @@ else
 ifeq ($(SUPPORT_ADF),1)
 SUPPORT_DISPLAY_CLASS := 0
 else
+ifeq ($(SUPPORT_DC),1)
 SUPPORT_DISPLAY_CLASS ?= 1
+else
+endif
 endif
 endif
 
@@ -578,6 +579,7 @@ $(eval $(call TunableBothConfigC,SUPPORT_TRUSTED_DEVICE,))
 $(eval $(call TunableBothConfigC,TRUSTED_DEVICE_DEFAULT_ENABLED,))
 $(eval $(call TunableBothConfigC,SUPPORT_EXPORTING_MEMORY_CONTEXT,))
 $(eval $(call TunableBothConfigC,SUPPORT_USER_REGISTER_CONFIGURATION,))
+$(eval $(call TunableBothConfigC,FIX_DUSTS_POW_ON_INIT,))
 
 $(eval $(call TunableKernelConfigC,DEBUG_HANDLEALLOC_INFO_KM,))
 $(eval $(call TunableKernelConfigC,SUPPORT_LINUX_X86_WRITECOMBINE,1))
@@ -592,6 +594,7 @@ $(eval $(call TunableKernelConfigC,PVR_LDM_PLATFORM_PRE_REGISTERED,))
 $(eval $(call TunableKernelConfigC,PVR_LDM_DRIVER_REGISTRATION_NAME,"\"$(PVRSRV_MODNAME)\""))
 $(eval $(call TunableBothConfigC,LDM_PLATFORM,))
 $(eval $(call TunableBothConfigC,LDM_PCI,))
+$(eval $(call TunableBothConfigC,PVRSRV_ENABLE_FULL_SYNC_TRACKING,))
 $(eval $(call TunableKernelConfigC,SYNC_DEBUG,))
 $(eval $(call TunableKernelConfigC,SUPPORT_DUMP_CLIENT_CCB_COMMANDS,))
 $(eval $(call TunableKernelConfigC,PVR_LINUX_DONT_USE_RANGE_BASED_INVALIDATE,))
@@ -612,6 +615,7 @@ because it is not specific to one single device._\
 ))
 
 $(eval $(call TunableBothConfigC,SUPPORT_PVR_VALGRIND,))
+
 
 
 
@@ -691,8 +695,15 @@ Enable automatic decoding of Firmware Trace via DebugFS._\
 ))
 
 $(eval $(call TunableKernelConfigC,PVR_LINUX_PYSMEM_MAX_POOL_PAGES,"$(MAX_POOL_PAGES)"))
-$(eval $(call TunableKernelConfigC,PVR_LINUX_VMALLOC_ALLOCATION_THRESHOLD, 16384 ))
 
+# ARM-Linux specific: 
+# When allocating uncached or write-combine memory we need to invalidate the
+# CPU cache before we can use the acquired pages. 
+# The threshhold defines at which number of pages we want to do a full 
+# cache flush instead of invalidating pages one by one.
+$(eval $(call TunableKernelConfigC,PVR_LINUX_ARM_PAGEALLOC_FLUSH_THRESHOLD, 256))
+
+$(eval $(call TunableKernelConfigC,PVR_LINUX_VMALLOC_ALLOCATION_THRESHOLD, 16384 ))
 
 # Tunable RGX_MAX_TA_SYNCS / RGX_MAX_3D_SYNCS to increase the size of sync array in the DDK
 # If defined, these macros take up the values as defined in the environment,

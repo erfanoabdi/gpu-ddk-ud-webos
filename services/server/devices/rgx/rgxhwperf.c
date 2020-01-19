@@ -468,7 +468,7 @@ PVRSRV_ERROR RGXHWPerfInit(PVRSRV_DEVICE_NODE *psRgxDevNode, IMG_BOOL bEnable)
 	 * 
 	 * However in the case of NO_HARDWARE the L2 buffer will not be used.
 	 * By reducing the size of the L2 buffer we can support a larger L1 buffer size
-	 * since on a 32-bit system, vmalloc memory is limitted.
+	 * since on a 32-bit system, vmalloc memory is limited.
 	 */
 #if defined(NO_HARDWARE)
 	ui32L2BufferSize = 0;
@@ -877,7 +877,7 @@ PVRSRV_ERROR PVRSRVRGXCtrlHWPerfCountersKM(
 static POS_LOCK hFTraceLock;
 static IMG_VOID RGXHWPerfFTraceCmdCompleteNotify(PVRSRV_CMDCOMP_HANDLE);
 
-static IMG_VOID RGXHWPerfFTraceGPUEnable(void)
+static PVRSRV_ERROR RGXHWPerfFTraceGPUEnable(void)
 {
 	PVRSRV_ERROR eError = PVRSRV_OK;
 
@@ -915,10 +915,15 @@ static IMG_VOID RGXHWPerfFTraceGPUEnable(void)
 		gpsRgxDevInfo);
 	PVR_LOGG_IF_ERROR(eError, "PVRSRVRegisterCmdCompleteNotify", err_close_stream);
 
+	/* Reset the OS timestamp coming from the timer correlation data
+	 * associated with the latest HWPerf event we processed.
+	 */
+	gpsRgxDevInfo->ui64LastSampledTimeCorrOSTimeStamp = 0;
+
 	gpsRgxDevInfo->bFTraceGPUEventsEnabled = IMG_TRUE;
 
 err_out:
-	PVR_DPF_RETURN;
+	PVR_DPF_RETURN_RC(eError);
 
 err_close_stream:
 	TLClientCloseStream(gpsRgxDevInfo->hGPUTraceTLConnection,
@@ -928,9 +933,9 @@ err_disconnect:
 	goto err_out;
 }
 
-static IMG_VOID RGXHWPerfFTraceGPUDisable(IMG_BOOL bDeInit)
+static PVRSRV_ERROR RGXHWPerfFTraceGPUDisable(IMG_BOOL bDeInit)
 {
-	PVRSRV_ERROR eError;
+	PVRSRV_ERROR eError = PVRSRV_OK;
 
 	PVR_DPF_ENTERED;
 
@@ -973,12 +978,13 @@ static IMG_VOID RGXHWPerfFTraceGPUDisable(IMG_BOOL bDeInit)
 
 	OSLockRelease(hFTraceLock);
 
-	PVR_DPF_RETURN;
+	PVR_DPF_RETURN_RC(eError);
 }
 
-IMG_VOID RGXHWPerfFTraceGPUEventsEnabledSet(IMG_BOOL bNewValue)
+PVRSRV_ERROR RGXHWPerfFTraceGPUEventsEnabledSet(IMG_BOOL bNewValue)
 {
 	IMG_BOOL bOldValue;
+	PVRSRV_ERROR eError = PVRSRV_OK;
 
 	PVR_DPF_ENTERED;
 
@@ -987,7 +993,8 @@ IMG_VOID RGXHWPerfFTraceGPUEventsEnabledSet(IMG_BOOL bNewValue)
 		/* RGXHWPerfFTraceGPUInit hasn't been called yet -- it's too early
 		 * to enable tracing.
 		 */
-		PVR_DPF_RETURN;
+		eError = PVRSRV_ERROR_NO_DEVICEDATA_FOUND;
+		PVR_DPF_RETURN_RC(eError);
 	}
 
 	bOldValue = gpsRgxDevInfo->bFTraceGPUEventsEnabled;
@@ -996,25 +1003,29 @@ IMG_VOID RGXHWPerfFTraceGPUEventsEnabledSet(IMG_BOOL bNewValue)
 	{
 		if (bNewValue)
 		{
-			RGXHWPerfFTraceGPUEnable();
+			eError = RGXHWPerfFTraceGPUEnable();
 		}
 		else
 		{
-			RGXHWPerfFTraceGPUDisable(IMG_FALSE);
+			eError = RGXHWPerfFTraceGPUDisable(IMG_FALSE);
 		}
 	}
 
-	PVR_DPF_RETURN;
+	PVR_DPF_RETURN_RC(eError);
 }
 
-IMG_VOID PVRGpuTraceEnabledSet(IMG_BOOL bNewValue)
+PVRSRV_ERROR PVRGpuTraceEnabledSet(IMG_BOOL bNewValue)
 {
+	PVRSRV_ERROR eError = PVRSRV_OK;
+
 	/* Lock down because we need to protect
 	 * RGXHWPerfFTraceGPUDisable()/RGXHWPerfFTraceGPUEnable()
 	 */
 	OSAcquireBridgeLock();
-	RGXHWPerfFTraceGPUEventsEnabledSet(bNewValue);
+	eError = RGXHWPerfFTraceGPUEventsEnabledSet(bNewValue);
 	OSReleaseBridgeLock();
+
+	return eError;
 }
 
 IMG_BOOL RGXHWPerfFTraceGPUEventsEnabled(IMG_VOID)
@@ -1051,9 +1062,11 @@ static IMG_VOID RGXHWPerfFTraceGPUSwitchEvent(PVRSRV_RGXDEV_INFO *psDevInfo,
 {
 	IMG_UINT64   ui64Timestamp;
 	RGX_HWPERF_HW_DATA_FIELDS* psHWPerfPktData;
+	RGXFWIF_GPU_UTIL_FWCB *psGpuUtilFWCB = psDevInfo->psRGXFWIfGpuUtilFWCb;
+	RGXFWIF_TIME_CORR *psTimeCorr;
 	IMG_UINT32 ui32DVFSClock;
-	IMG_UINT64 ui64CRTimerStamp = RGXReadHWTimerReg(psDevInfo);
-	IMG_UINT64 ui64OSTimeStamp = OSClockus64();
+	IMG_UINT64 ui64CRTimeStamp;
+	IMG_UINT64 ui64OSTimeStamp;
 
 	PVR_DPF_ENTERED;
 
@@ -1066,21 +1079,34 @@ static IMG_VOID RGXHWPerfFTraceGPUSwitchEvent(PVRSRV_RGXDEV_INFO *psDevInfo,
 	 * filtered by ValidFTraceEvent() */
 
 	/* Calculate the OS timestamp given an RGX timestamp in the HWPerf event */
-	ui32DVFSClock = psDevInfo->psGpuDVFSHistory->aui32DVFSClockCB[psDevInfo->psGpuDVFSHistory->ui32CurrentDVFSId];
+	psTimeCorr      = &psGpuUtilFWCB->sTimeCorr[psHWPerfPktData->ui32TimeCorrIndex];
+	ui64CRTimeStamp = psTimeCorr->ui64CRTimeStamp;
+	ui64OSTimeStamp = psTimeCorr->ui64OSTimeStamp;
+	ui32DVFSClock   = psTimeCorr->ui32DVFSClock;
 	PVR_ASSERT(ui32DVFSClock>=1000000);
+
+	if(psDevInfo->ui64LastSampledTimeCorrOSTimeStamp > ui64OSTimeStamp)
+	{
+		/* The previous packet had a time reference (time correlation data) more recent
+		 * than the one in the current packet, it means the timer correlation array wrapped
+		 * too quickly (buffer too small) and in the previous call to RGXHWPerfFTraceGPUSwitchEvent
+		 * we read one of the newest timer correlations rather than one of the oldest ones.
+		 */
+		PVR_DPF((PVR_DBG_ERROR, "RGXHWPerfFTraceGPUSwitchEvent: The timestamps computed so far could be wrong! The time correlation array size should be increased to avoid this."));
+	}
+	psDevInfo->ui64LastSampledTimeCorrOSTimeStamp = ui64OSTimeStamp;
 
 	{
 		IMG_UINT32 rgxCyclesPer_uS = ui32DVFSClock/1000000;                        /* RGX Speed Hz->uHz */
 
-		IMG_UINT64 deltaRgxCycles = (ui64CRTimerStamp - psHWPerfPkt->ui64RGXTimer) /* RGX CR timer ticks delta */
+		IMG_UINT64 deltaRgxCycles = (psHWPerfPkt->ui64RGXTimer - ui64CRTimeStamp) /* RGX CR timer ticks delta */
 		                             << 8ULL ;                                                    /* x256 to convert to cycles delta */
 		IMG_UINT32 deltaRgxCycles_remainder;                                                      /* Unable to use as not in a time unit */
 		IMG_UINT64 delta_uS = OSDivide64r64(deltaRgxCycles, rgxCyclesPer_uS, &deltaRgxCycles_remainder);/* RGX time delta in uS */
-		ui64Timestamp = (ui64OSTimeStamp - delta_uS)                               /* Calculate OS time of HWPerf event */
-		                * 1000ULL;                                                                /* Convert timestamp to nS for gpu.h */
+		ui64Timestamp = ui64OSTimeStamp + (delta_uS * 1000ULL);                                   /* Calculate OS time of HWPerf event */
 
 		PVR_DPF((PVR_DBG_VERBOSE, "RGXHWPerfFTraceGPUSwitchEvent: psCurrentDvfs RGX %llu, OS %llu, DVFSCLK %u",
-				ui64CRTimerStamp, ui64OSTimeStamp, ui32DVFSClock ));
+				ui64CRTimeStamp, ui64OSTimeStamp, ui32DVFSClock ));
 
 		PVR_DPF((PVR_DBG_VERBOSE, "RGXHWPerfFTraceGPUSwitchEvent: event RGX %llu, rgxCyclesPer_uS %u, deltaRgxCycles %llu, deltaRgxCycles_remainder %u, delta_uS %llu, TS %llu, ",
 				psHWPerfPkt->ui64RGXTimer, rgxCyclesPer_uS, deltaRgxCycles, deltaRgxCycles_remainder, delta_uS, ui64Timestamp ));
@@ -1121,12 +1147,13 @@ static IMG_BOOL ValidFTraceEvent(RGX_HWPERF_V2_PACKET_HDR* psHWPerfPkt,
 			{ /* RGX_HWPERF_HW_SHGKICK */      "SHG",    PVR_GPUTRACE_SWITCH_TYPE_BEGIN },
 			{ /* RGX_HWPERF_HW_SHGFINISHED */  "SHG",    PVR_GPUTRACE_SWITCH_TYPE_END },
 			{ /* RGX_HWPERF_HW_3DTQFINISHED */ "TQ3D",   PVR_GPUTRACE_SWITCH_TYPE_END },
+			{ /* RGX_HWPERF_HW_3DSPMFINISHED */ "3DSPM", PVR_GPUTRACE_SWITCH_TYPE_END },
 	};
 
 	PVR_ASSERT(psHWPerfPkt);
 
 	eType = RGX_HWPERF_GET_TYPE(psHWPerfPkt);
-	if ((eType < RGX_HWPERF_HW_TAKICK) || (eType > RGX_HWPERF_HW_3DTQFINISHED))
+	if ((eType < RGX_HWPERF_HW_TAKICK) || (eType > RGX_HWPERF_HW_3DSPMFINISHED))
 	{
 		/* No map entry, ignore event */
 		PVR_DPF((PVR_DBG_VERBOSE, "ValidFTraceEvent: Unsupported event type %d %02d",

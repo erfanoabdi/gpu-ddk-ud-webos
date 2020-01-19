@@ -205,6 +205,9 @@ typedef struct _PVRSRV_RGXDEV_INFO_
 
 	DEVMEM_MEMDESC			*psRGXFWIfInitMemDesc;
 
+	DEVMEM_MEMDESC			*psRGXFWIfRuntimeCfgMemDesc;
+	RGXFWIF_RUNTIME_CFG		*psRGXFWIfRuntimeCfg;
+
 #if defined(RGXFW_ALIGNCHECKS)
 	DEVMEM_MEMDESC			*psRGXFWAlignChecksMemDesc;	
 #endif
@@ -258,6 +261,7 @@ typedef struct _PVRSRV_RGXDEV_INFO_
 	IMG_BOOL				bFTraceGPUEventsEnabled;
 	IMG_HANDLE				hGPUTraceTLConnection;
 	IMG_HANDLE				hGPUTraceTLStream;
+	IMG_UINT64				ui64LastSampledTimeCorrOSTimeStamp;
 #endif
 
 	/* If we do 10 deferred memory allocations per second, then the ID would warp around after 13 years */
@@ -281,9 +285,12 @@ typedef struct _PVRSRV_RGXDEV_INFO_
 
 	/* Poll data for detecting firmware fatal errors */
 	IMG_UINT32  aui32CrLastPollAddr[RGXFW_THREAD_NUM];
-	IMG_UINT32  ui32KCCBLastROff[RGXFWIF_DM_MAX];
-	IMG_UINT32  ui32LastGEOTimeouts;
+	IMG_UINT32  ui32KCCBCmdsExecutedLastTime;
+	IMG_BOOL    bKCCBCmdsWaitingLastTime;
+	IMG_UINT32  ui32GEOTimeoutsLastTime;
 
+	/* Client stall detection */
+	IMG_BOOL	bStalledClient;
 
 	/* Timer Queries */
 	IMG_UINT32     ui32ActiveQueryId;       /*!< id of the active line */

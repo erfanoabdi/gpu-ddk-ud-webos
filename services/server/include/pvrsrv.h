@@ -47,12 +47,16 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 extern "C" {
 #endif
 
+#if defined(KERNEL) && defined(ANDROID)
+#define __pvrsrv_defined_struct_enum__
+#include <services_kernel_client.h>
+#endif
+
 #include "device.h"
 #include "resman.h"
 #include "power.h"
 #include "sysinfo.h"
 #include "physheap.h"
-
 
 typedef struct _SYS_DEVICE_ID_TAG
 {
@@ -90,6 +94,7 @@ typedef struct PVRSRV_DATA_TAG
 
 	IMG_HANDLE					hCleanupThread;				/*!< Cleanup thread */
 	IMG_HANDLE					hCleanupEventObject;		/*!< Event object to drive cleanup thread */
+	IMG_PID						cleanupThreadPid;			/*!< Cleanup thread process id */
 
 	IMG_HANDLE					hDevicesWatchdogThread;		/*!< Devices Watchdog thread */
 	IMG_HANDLE					hDevicesWatchdogEvObj;		/*! Event object to drive devices watchdog thread */

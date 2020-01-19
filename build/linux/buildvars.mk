@@ -271,3 +271,9 @@ $(warning  The TOOLCHAIN option has been removed, but)
 $(warning  you have it set (via $(origin TOOLCHAIN)))
 $(warning **********************************************)
 endif
+
+# We need the glibc version to generate the cache names for LLVM and XOrg components.
+ifeq ($(CROSS_COMPILE),)
+LIBC_VERSION_PROBE := $(shell ldd  $(shell which true) | awk '/libc.so/{print $$3'} )
+LIBC_VERSION := $(shell $(LIBC_VERSION_PROBE)| tr -d '(),' | head -1)
+endif

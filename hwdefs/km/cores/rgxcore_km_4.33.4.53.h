@@ -1,6 +1,5 @@
 /*************************************************************************/ /*!
-@File           pvr_sync.h
-@Title          Kernel driver for Android's sync mechanism
+@Title          RGX Core BVNC 4.33.4.53
 @Copyright      Copyright (c) Imagination Technologies Ltd. All Rights Reserved
 @License        Dual MIT/GPLv2
 
@@ -40,42 +39,33 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */ /**************************************************************************/
 
-#ifndef _PVR_SYNC_H
-#define _PVR_SYNC_H
+#ifndef _RGXCORE_KM_4_33_4_53_H_
+#define _RGXCORE_KM_4_33_4_53_H_
 
-#include "pvr_fd_sync_user.h"
-#include "rgx_fwif_shared.h"
+/***** Automatically generated file (10/28/2014 1:55:39 PM): Do not edit manually ********************/
+/***** Timestamp:  (10/28/2014 1:55:39 PM)************************************************************/
+/***** CS: @2947126 ******************************************************************/
 
-/* Services internal interface */
-PVRSRV_ERROR PVRFDSyncDeviceInitKM(void);
-void PVRFDSyncDeviceDeInitKM(void);
 
-/* to keep track of the intermediate allocations done for the FD merge */
-typedef struct _FDMERGE_DATA_
-{
-	PRGXFWIF_UFO_ADDR *pauiFenceUFOAddress;
-	IMG_UINT32        *paui32FenceValue;
-	PRGXFWIF_UFO_ADDR *pauiUpdateUFOAddress;
-	IMG_UINT32        *paui32UpdateValue;
-} FDMERGE_DATA;
+/******************************************************************************
+ * BVNC = 4.33.4.53 
+ *****************************************************************************/
+#define RGX_BVNC_KM_B 4
+#define RGX_BVNC_KM_V 33
+#define RGX_BVNC_KM_N 4
+#define RGX_BVNC_KM_C 53
 
-IMG_INTERNAL PVRSRV_ERROR 
-PVRFDSyncMergeFencesKM(IMG_UINT32        *pui32ClientFenceCountOut,
-					   PRGXFWIF_UFO_ADDR **ppauiFenceUFOAddressOut,
-					   IMG_UINT32        **ppaui32FenceValueOut,
-					   IMG_UINT32        *pui32ClientUpdateCountOut,
-					   PRGXFWIF_UFO_ADDR **ppauiUpdateUFOAddressOut,
-					   IMG_UINT32        **ppaui32UpdateValueOut,
-					   const IMG_CHAR*   pszName,
-					   const IMG_BOOL    bUpdate,
-					   const IMG_UINT32  ui32NumFDs,
-					   const IMG_INT32   *paui32FDs,
-					   FDMERGE_DATA      *psFDMergeData);
+/******************************************************************************
+ * Errata 
+ *****************************************************************************/
 
-IMG_INTERNAL IMG_VOID
-PVRFDSyncMergeFencesCleanupKM(FDMERGE_DATA *psFDMergeData);
 
-PVRSRV_ERROR
-PVRFDSyncNoHwUpdateFenceKM(IMG_INT32 i32FDFence);
 
-#endif /* _PVR_SYNC_H */
+ 
+/******************************************************************************
+ * Enhancements 
+ *****************************************************************************/
+
+
+
+#endif /* _RGXCORE_KM_4_33_4_53_H_ */

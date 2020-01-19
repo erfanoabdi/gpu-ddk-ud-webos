@@ -90,6 +90,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(SUPPORT_SYSTEM_INTERRUPT_HANDLING)
 #include "syscommon.h"
 #endif
+#include "physmem_osmem_linux.h"
 
 #if defined(EMULATOR) || defined(VIRTUAL_PLATFORM)
 #define EVENT_OBJECT_TIMEOUT_MS		(2000)
@@ -98,6 +99,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #endif /* EMULATOR */
 
 ENV_DATA *gpsEnvData = IMG_NULL;
+
+struct task_struct *OSGetBridgeLockOwner(void);
 
 /*
 	Create a 4MB pool which should be more then enough in most cases,
@@ -288,7 +291,11 @@ PVRSRV_ERROR OSMMUPxMap(PVRSRV_DEVICE_NODE *psDevNode, Px_HANDLE *psMemHandle,
 		/* vmalloc and friends expect a guard page so we need to take that into account */
 		tmp_area.addr = (void *)uiCPUVAddr;
 		tmp_area.size =  2 * PAGE_SIZE;
-		ret = map_vm_area(&tmp_area, prot, &ppsPage);
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,17,0))
+		ret = map_vm_area(&tmp_area, prot, ppsPage);
+#else
+		ret = map_vm_area(&tmp_area, prot, & ppsPage);
+#endif
 		if (ret) {
 			gen_pool_free(pvrsrv_pool_writecombine, uiCPUVAddr, PAGE_SIZE);
 			PVR_DPF((PVR_DBG_ERROR,
@@ -484,6 +491,8 @@ PVRSRV_ERROR OSInitEnvData(void)
 	}
 #endif	/* defined(CONFIG_GENERIC_ALLOCATOR) && defined(CONFIG_X86) && (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0)) */
 
+	LinuxInitPagePool();
+
 	return PVRSRV_OK;
 }
 
@@ -509,6 +518,8 @@ void OSDeInitEnvData(void)
 	psEnvData->pvBridgeData = IMG_NULL;
 
 	OSFreeMem(psEnvData);
+
+	LinuxDeinitPagePool();
 }
 
 ENV_DATA *OSGetEnvData(void)
@@ -756,7 +767,6 @@ PVRSRV_ERROR OSInstallDeviceLISR(PVRSRV_DEVICE_CONFIG *psDevConfig,
 {
 #if defined(SUPPORT_SYSTEM_INTERRUPT_HANDLING)
 	return SysInstallDeviceLISR(psDevConfig->ui32IRQ,
-					psDevConfig->bIRQIsShared,
 					psDevConfig->pszName,
 					pfnLISR,
 					pvData,
@@ -767,14 +777,23 @@ PVRSRV_ERROR OSInstallDeviceLISR(PVRSRV_DEVICE_CONFIG *psDevConfig,
 
 	psLISRData = kmalloc(sizeof(LISR_DATA), GFP_KERNEL);
 
-	if (psDevConfig->bIRQIsShared)
-	{
-		flags = IRQF_SHARED;
-	}
-
 	psLISRData->pfnLISR = pfnLISR;
 	psLISRData->pvData = pvData;
 	psLISRData->ui32IRQ = psDevConfig->ui32IRQ;
+
+	if (psDevConfig->bIRQIsShared)
+	{
+		flags |= IRQF_SHARED;
+	}
+
+	if (psDevConfig->eIRQActiveLevel == PVRSRV_DEVICE_IRQ_ACTIVE_HIGH)
+	{
+		flags |= IRQF_TRIGGER_HIGH;
+	}
+	else if (psDevConfig->eIRQActiveLevel == PVRSRV_DEVICE_IRQ_ACTIVE_LOW)
+	{
+		flags |= IRQF_TRIGGER_LOW;
+	}
 
 	PVR_TRACE(("Installing device LISR %s on IRQ %d with cookie %p", psDevConfig->pszName, psDevConfig->ui32IRQ, pvData));
 
@@ -1782,7 +1801,7 @@ PVRSRV_ERROR OSEventObjectSignal(IMG_HANDLE hEventObject)
 */ /**************************************************************************/
 IMG_BOOL OSProcHasPrivSrvInit(void)
 {
-	return capable(CAP_SYS_MODULE) != 0;
+	return capable(CAP_SYS_ADMIN) != 0;
 }
 
 /*************************************************************************/ /*!
@@ -1952,14 +1971,23 @@ void OSDumpStack(void)
 	dump_stack();
 }
 
+static struct task_struct *gsOwner;
+
 void OSAcquireBridgeLock(void)
 {
 	mutex_lock(&gPVRSRVLock);
+	gsOwner = current;
 }
 
 void OSReleaseBridgeLock(void)
 {
+	gsOwner = NULL;
 	mutex_unlock(&gPVRSRVLock);
+}
+
+struct task_struct *OSGetBridgeLockOwner(void)
+{
+	return gsOwner;
 }
 
 
@@ -1972,6 +2000,12 @@ void OSReleaseBridgeLock(void)
                                root.
 @Input          pfnGetElement  Pointer to function that can be used to obtain the
                                value of the statistic.
+@Input          pfnIncMemRefCt Pointer to function that can be used to take a
+                               reference on the memory backing the statistic
+							   entry.
+@Input          pfnDecMemRefCt Pointer to function that can be used to drop a
+                               reference on the memory backing the statistic
+							   entry.
 @Input          pvData         OS specific reference that can be used by
                                pfnGetElement.
 @Return         Pointer void reference to the entry created, which can be
@@ -1979,9 +2013,11 @@ void OSReleaseBridgeLock(void)
 */ /**************************************************************************/
 IMG_PVOID OSCreateStatisticEntry(IMG_CHAR* pszName, IMG_PVOID pvFolder,
                                  OS_GET_STATS_ELEMENT_FUNC* pfnGetElement,
+								 OS_INC_STATS_MEM_REFCOUNT_FUNC* pfnIncMemRefCt,
+								 OS_DEC_STATS_MEM_REFCOUNT_FUNC* pfnDecMemRefCt,
                                  IMG_PVOID pvData)
 {
-	return PVRDebugFSCreateStatisticEntry(pszName, pvFolder, pfnGetElement, pvData);
+	return PVRDebugFSCreateStatisticEntry(pszName, (PVR_DEBUGFS_DIR_DATA *)pvFolder, pfnGetElement, pfnIncMemRefCt, pfnDecMemRefCt, pvData);
 } /* OSCreateStatisticEntry */
 
 
@@ -1993,7 +2029,7 @@ IMG_PVOID OSCreateStatisticEntry(IMG_CHAR* pszName, IMG_PVOID pvFolder,
 */ /**************************************************************************/
 void OSRemoveStatisticEntry(IMG_PVOID pvEntry)
 {
-	PVRDebugFSRemoveStatisticEntry(pvEntry);
+	PVRDebugFSRemoveStatisticEntry((PVR_DEBUGFS_DRIVER_STAT *)pvEntry);
 } /* OSRemoveStatisticEntry */
 
 
@@ -2008,12 +2044,11 @@ void OSRemoveStatisticEntry(IMG_PVOID pvEntry)
 */ /**************************************************************************/
 IMG_PVOID OSCreateStatisticFolder(IMG_CHAR *pszName, IMG_PVOID pvFolder)
 {
-	struct dentry *psDir;
+	PVR_DEBUGFS_DIR_DATA *psNewStatFolder = IMG_NULL;
 	int iResult;
 
-	iResult = PVRDebugFSCreateEntryDir(pszName, pvFolder, &psDir);
-
-	return (iResult == 0) ? psDir : IMG_NULL;
+	iResult = PVRDebugFSCreateEntryDir(pszName, (PVR_DEBUGFS_DIR_DATA *)pvFolder, &psNewStatFolder);
+	return (iResult == 0) ? (void *)psNewStatFolder : IMG_NULL;
 } /* OSCreateStatisticFolder */
 
 
@@ -2025,5 +2060,5 @@ IMG_PVOID OSCreateStatisticFolder(IMG_CHAR *pszName, IMG_PVOID pvFolder)
 */ /**************************************************************************/
 void OSRemoveStatisticFolder(IMG_PVOID pvFolder)
 {
-	PVRDebugFSRemoveEntryDir((struct dentry *)pvFolder);
+	PVRDebugFSRemoveEntryDir((PVR_DEBUGFS_DIR_DATA *)pvFolder);
 } /* OSRemoveStatisticFolder */

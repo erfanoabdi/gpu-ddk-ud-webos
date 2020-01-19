@@ -40,8 +40,16 @@
 
 include ../common/android/platform_version.mk
 
-JNI_CPU_ABI     := armeabi-v7a
-JNI_CPU_ABI_2ND := armeabi
+# Now we have included the platform_version.mk file, we know we have a
+# correctly configured OUT_DIR and can probe it to figure out our
+# architecture. For backwards compatibility with KitKat, use the deprecated
+# ro.product.cpu.abi (primary architecture) property instead of abilist64.
+
+$(eval $(subst #,$(newline),$(shell cat $(BUILD_PROP) | \
+    grep '^ro.product.cpu.abi=\|^ro.product.cpu.abilist32=' | \
+    sed -e 's,ro.product.cpu.abi=,JNI_CPU_ABI=,' \
+        -e 's,ro.product.cpu.abilist32=,JNI_CPU_ABI_2ND=,' | \
+    tr ',' ' ' | tr '\n' '#')))
 
 # If ARCH is set, use that to remap to an "Android" ARCH..
 ANDROID_ARCH := $(filter arm arm64 mips mips64 x86 x86_64,$(ARCH))
@@ -84,7 +92,9 @@ KERNEL_CROSS_COMPILE ?= undef
 endif
 
 ifneq ($(filter arm64 mips64 x86_64,$(ANDROID_ARCH)),)
-ifeq ($(MULTIARCH),1)
-ANDROID_COMBO := 1
+ifeq ($(MULTIARCH),)
+$(warning *** 64-bit architecture detected. Enabling MULTIARCH=1.)
+$(warning *** If you want a 64-bit only build, use MULTIARCH=64only.)
+export MULTIARCH := 1
 endif
 endif

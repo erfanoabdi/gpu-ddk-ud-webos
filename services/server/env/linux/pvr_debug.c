@@ -601,6 +601,87 @@ static struct seq_operations gsDebugVersionReadOps =
 	.show = _DebugVersionSeqShow,
 };
 
+#if 0
+static void *_DebugFreqSeqStart(struct seq_file *psSeqFile,
+				   loff_t *puiPosition)
+{
+	PVRSRV_DATA *psPVRSRVData = (PVRSRV_DATA *)psSeqFile->private;
+	loff_t uiCurrentPosition = 1;
+
+	if (*puiPosition == 0)
+	{
+		return SEQ_START_TOKEN;
+	}
+
+	return List_PVRSRV_DEVICE_NODE_Any_va(psPVRSRVData->psDeviceNodeList,
+					      _DebugVersionCompare_AnyVaCb,
+					      &uiCurrentPosition,
+					      *puiPosition);
+}
+
+static void _DebugFreqSeqStop(struct seq_file *psSeqFile, void *pvData)
+{
+	PVR_UNREFERENCED_PARAMETER(psSeqFile);
+	PVR_UNREFERENCED_PARAMETER(pvData);
+}
+
+static void *_DebugFreqSeqNext(struct seq_file *psSeqFile,
+				  void *pvData,
+				  loff_t *puiPosition)
+{
+	PVRSRV_DATA *psPVRSRVData = (PVRSRV_DATA *)psSeqFile->private;
+	loff_t uiCurrentPosition = 1;
+
+	PVR_UNREFERENCED_PARAMETER(pvData);
+
+	(*puiPosition)++;
+
+	return List_PVRSRV_DEVICE_NODE_Any_va(psPVRSRVData->psDeviceNodeList,
+					      _DebugVersionCompare_AnyVaCb,
+					      &uiCurrentPosition,
+					      *puiPosition);
+}
+
+static int _DebugFreqSeqShow(struct seq_file *psSeqFile, void *pvData)
+{
+	if (pvData == SEQ_START_TOKEN)
+	{
+		const IMG_CHAR *pszSystemVersionString = PVRSRVGetSystemName();
+
+		seq_printf(psSeqFile, "Freq %s (%s) %s\n",
+			   PVRVERSION_STRING,
+			   PVR_BUILD_TYPE, PVR_BUILD_DIR);
+
+		seq_printf(psSeqFile, "Freq: %s\n", pszSystemVersionString);
+	}
+	else if (pvData != NULL)
+	{
+		PVRSRV_DEVICE_NODE *psDevNode = (PVRSRV_DEVICE_NODE *)pvData;
+
+		if (psDevNode->pfnDeviceVersionString)
+		{
+			IMG_CHAR *pszDeviceVersionString;
+			
+			if (psDevNode->pfnDeviceVersionString(psDevNode, &pszDeviceVersionString) == PVRSRV_OK)
+			{
+				seq_printf(psSeqFile, "%s\n", pszDeviceVersionString);
+				
+				kfree(pszDeviceVersionString);
+			}
+		}
+	}
+
+	return 0;
+}
+
+static struct seq_operations gsDebugFreqReadOps =
+{
+	.start = _DebugFreqSeqStart,
+	.stop = _DebugFreqSeqStop,
+	.next = _DebugFreqSeqNext,
+	.show = _DebugFreqSeqShow,
+};
+#endif
 
 /*************************************************************************/ /*!
  Nodes DebugFS entry
@@ -1229,17 +1310,18 @@ static IMG_INT DebugLevelSet(const char __user *pcBuffer,
 }
 #endif /* defined(DEBUG) */
 
-static struct dentry *gpsVersionDebugFSEntry;
-static struct dentry *gpsNodesDebugFSEntry;
-static struct dentry *gpsStatusDebugFSEntry;
-static struct dentry *gpsDumpDebugDebugFSEntry;
+
+static PVR_DEBUGFS_ENTRY_DATA *gpsVersionDebugFSEntry;
+static PVR_DEBUGFS_ENTRY_DATA *gpsNodesDebugFSEntry;
+static PVR_DEBUGFS_ENTRY_DATA *gpsStatusDebugFSEntry;
+static PVR_DEBUGFS_ENTRY_DATA *gpsDumpDebugDebugFSEntry;
 
 #if defined(PVRSRV_ENABLE_FW_TRACE_DEBUGFS)
-static struct dentry *gpsFWTraceDebugFSEntry;
+static PVR_DEBUGFS_ENTRY_DATA *gpsFWTraceDebugFSEntry;
 #endif
 
 #if defined(DEBUG)
-static struct dentry *gpsDebugLevelDebugFSEntry;
+static PVR_DEBUGFS_ENTRY_DATA *gpsDebugLevelDebugFSEntry;
 #endif
 
 int PVRDebugCreateDebugFSEntries(void)
@@ -1256,6 +1338,7 @@ int PVRDebugCreateDebugFSEntries(void)
 					NULL,
 					psPVRSRVData,
 					&gpsVersionDebugFSEntry);
+
 	if (iResult != 0)
 	{
 		return iResult;
@@ -1394,5 +1477,6 @@ void PVRDebugRemoveDebugFSEntries(void)
 		PVRDebugFSRemoveEntry(gpsVersionDebugFSEntry);
 		gpsVersionDebugFSEntry = NULL;
 	}
+
 }
 

@@ -259,6 +259,94 @@ struct _PMR_PAGELIST_
 	struct _PMR_ *psReferencePMR;
 };
 
+/*
+ * This Lock is used to protect the sequence of operation used in MMapPMR and in
+ * the memory management bridge. This should make possible avoid the use of the bridge
+ * lock in mmap.c avoiding regressions.
+ */
+
+/* this structure tracks the current owner of the PMR lock, avoiding use of
+ * the Linux (struct mutex).owner field which is not guaranteed to be up to date.
+ * there is Linux-specific code to provide an opimised approach for Linux,
+ * using the kernel (struct task_struct *) instead of a PID/TID combination.
+ */
+typedef struct _PMR_LOCK_OWNER_
+{
+#if defined(LINUX)
+	struct task_struct *task;
+#else
+	POS_LOCK hPIDTIDLock;
+	IMG_PID uiPID;
+	IMG_UINTPTR_T uiTID;
+#endif
+} PMR_LOCK_OWNER;
+
+POS_LOCK gGlobalLookupPMRLock;
+static PMR_LOCK_OWNER gsPMRLockOwner;
+
+static IMG_VOID _SetPMRLockOwner(IMG_VOID)
+{
+#if defined(LINUX)
+	gsPMRLockOwner.task = current;
+#else
+	OSLockAcquire(gsPMRLockOwner.hPIDTIDLock);
+	gsPMRLockOwner.uiPID = OSGetCurrentProcessIDKM();
+	gsPMRLockOwner.uiTID = OSGetCurrentThreadIDKM();
+	OSLockRelease(gsPMRLockOwner.hPIDTIDLock);
+#endif
+}
+
+/* Must only be called by the thread which owns the PMR lock */
+static IMG_VOID _ClearPMRLockOwner(IMG_VOID)
+{
+#if defined(LINUX)
+	gsPMRLockOwner.task = IMG_NULL;
+#else
+	OSLockAcquire(gsPMRLockOwner.hPIDTIDLock);
+	gsPMRLockOwner.uiPID = 0;
+	gsPMRLockOwner.uiTID = 0;
+	OSLockRelease(gsPMRLockOwner.hPIDTIDLock);
+#endif
+}
+
+static IMG_BOOL _ComparePMRLockOwner(IMG_VOID)
+{
+#if defined(LINUX)
+	return gsPMRLockOwner.task == current;
+#else
+	IMG_BOOL bRet;
+
+	OSLockAcquire(gsPMRLockOwner.hPIDTIDLock);
+	bRet = (gsPMRLockOwner.uiPID == OSGetCurrentProcessIDKM()) &&
+			(gsPMRLockOwner.uiTID == OSGetCurrentThreadIDKM());
+	OSLockRelease(gsPMRLockOwner.hPIDTIDLock);
+	return bRet;
+#endif
+}
+
+IMG_VOID PMRLock()
+{
+	OSLockAcquire(gGlobalLookupPMRLock);
+	_SetPMRLockOwner();
+}
+
+IMG_VOID PMRUnlock()
+{
+	_ClearPMRLockOwner();
+	OSLockRelease(gGlobalLookupPMRLock);
+}
+
+IMG_BOOL PMRIsLocked(void)
+{
+	return OSLockIsLocked(gGlobalLookupPMRLock);
+}
+
+
+IMG_BOOL PMRIsLockedByMe(void)
+{
+	return PMRIsLocked() && _ComparePMRLockOwner();
+}
+
 #define MIN3(a,b,c)	(((a) < (b)) ? (((a) < (c)) ? (a):(c)) : (((b) < (c)) ? (b):(c)))
 
 static PVRSRV_ERROR
@@ -607,16 +695,14 @@ PVRSRV_ERROR
 PMRUnlockSysPhysAddresses(PMR *psPMR)
 {
     PVRSRV_ERROR eError2;
-    IMG_UINT32 uiLockCount;
 
     PVR_ASSERT(psPMR != IMG_NULL);
 
 	OSLockAcquire(psPMR->hLock);
 	PVR_ASSERT(psPMR->uiLockCount > 0);
-	uiLockCount = --psPMR->uiLockCount;
-	OSLockRelease(psPMR->hLock);
+	psPMR->uiLockCount--;
 
-    if (uiLockCount == 0)
+    if (psPMR->uiLockCount == 0)
     {
         if (psPMR->psFuncTab->pfnUnlockPhysAddresses != IMG_NULL)
         {
@@ -627,6 +713,8 @@ PMRUnlockSysPhysAddresses(PMR *psPMR)
             PVR_ASSERT(eError2 == PVRSRV_OK);
         }
     }
+
+	OSLockRelease(psPMR->hLock);
 
     /* We also count the locks as references, so that the PMR is not
        freed while someone is using a physical address. */
@@ -795,6 +883,11 @@ PVRSRV_ERROR PMRSecureExportPMR(CONNECTION_DATA *psConnection,
 {
 	PVRSRV_ERROR eError;
 
+	/* We are acquiring reference to PMR here because OSSecureExport
+	 * releases bridge lock and PMR lock for a moment and we don't want PMR
+	 * to be removed by other thread in the meantime. */
+	_Ref(psPMR);
+
 	eError = OSSecureExport(psConnection,
 							(IMG_PVOID) psPMR,
 							phSecure,
@@ -805,15 +898,13 @@ PVRSRV_ERROR PMRSecureExportPMR(CONNECTION_DATA *psConnection,
 		goto e0;
 	}
 
-	/* Make sure the PMR won't get freed before it's imported */
-	_Ref(psPMR);
-
 	/* Pass back the PMR for resman */
 	*ppsPMR = psPMR;
 
 	return PVRSRV_OK;
 e0:
 	PVR_ASSERT(eError != PVRSRV_OK);
+	_UnrefAndMaybeDestroy(psPMR);
 	return eError;
 }
 
@@ -2509,6 +2600,12 @@ PMRInit()
 		return eError;
 	}
 
+	eError = OSLockCreate(&gGlobalLookupPMRLock, LOCK_TYPE_PASSIVE);
+	if (eError != PVRSRV_OK)
+	{
+		return eError;
+	}
+
     _gsSingletonPMRContext.uiNextSerialNum = 1;
 
     _gsSingletonPMRContext.uiNextKey = 0x8300f001 * (IMG_UINTPTR_T)&_gsSingletonPMRContext;
@@ -2546,6 +2643,7 @@ PMRDeInit()
     }
 
 	OSLockDestroy(_gsSingletonPMRContext.hLock);
+	OSLockDestroy(gGlobalLookupPMRLock);
 
     _gsSingletonPMRContext.bModuleInitialised = IMG_FALSE;
 

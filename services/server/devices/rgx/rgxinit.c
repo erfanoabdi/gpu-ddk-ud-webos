@@ -197,7 +197,7 @@ static RGXFWIF_GPU_UTIL_STATS RGXGetGpuUtilStats(PVRSRV_DEVICE_NODE *psDeviceNod
 	IMG_UINT32				ui32Remainder;
 	RGXFWIF_GPU_UTIL_STATS	sRet;
 	PVRSRV_DEV_POWER_STATE  ePowerState;
-	PVRSRV_ERROR            eError;
+//	PVRSRV_ERROR            eError;
 	IMG_UINT32 				ui32Type;
 	IMG_UINT32				ui32NextType;
 	
@@ -213,11 +213,11 @@ static RGXFWIF_GPU_UTIL_STATS RGXGetGpuUtilStats(PVRSRV_DEVICE_NODE *psDeviceNod
 	sRet.bIncompleteData	   = IMG_FALSE;
 
 	/* take the power lock as we might issue an OSReadHWReg64 below */
-	eError = PVRSRVPowerLock();
+/*	eError = PVRSRVPowerLock();
 	if (eError != PVRSRV_OK)
 	{
 		return sRet;
-	}
+	}*/
 
 	/* write offset is incremented after writing to FWCB, so subtract 1 */
 	ui32WOffSample = psUtilFWCb->ui32WriteOffset;
@@ -239,7 +239,7 @@ static RGXFWIF_GPU_UTIL_STATS RGXGetGpuUtilStats(PVRSRV_DEVICE_NODE *psDeviceNod
 		ui64CurrentTimer = RGXReadHWTimerReg(psDevInfo);
 		ui32NextType = RGXFWIF_GPU_UTIL_FWCB_TYPE_CRTIME;
 	}
-	PVRSRVPowerUnlock();
+	//PVRSRVPowerUnlock();
 
 	do
 	{
@@ -1023,8 +1023,7 @@ PVRSRV_ERROR PVRSRVRGXInitFirmwareKM(PVRSRV_DEVICE_NODE			*psDeviceNode,
 	rgx_bvnc_packed(&sBVNC.ui32BNC, sBVNC.aszV, sBVNC.ui32VLenMax, RGX_BVNC_KM_B, RGX_BVNC_KM_V_ST, RGX_BVNC_KM_N, RGX_BVNC_KM_C);
 
 	RGX_BVNC_EQUAL(sBVNC, *psClientBVNC, bCompatibleAll, bCompatibleVersion, bCompatibleLenMax, bCompatibleBNC, bCompatibleV);
-
-    bCompatibleAll = IMG_TRUE;
+	
 	if (!bCompatibleAll)
 	{
 		if (!bCompatibleVersion)
@@ -2136,7 +2135,6 @@ static PVRSRV_ERROR RGXDevInitCompatCheck_BVNC_FWAgainstDriver(PVRSRV_RGXDEV_INF
 
 	RGX_BVNC_EQUAL(sBVNC, psRGXFWInit->sRGXCompChecks.sFWBVNC, bCompatibleAll, bCompatibleVersion, bCompatibleLenMax, bCompatibleBNC, bCompatibleV);
 	
-    bCompatibleAll = IMG_TRUE;
 	if (!bCompatibleAll)
 	{
 		if (!bCompatibleVersion)
@@ -2395,7 +2393,6 @@ static PVRSRV_ERROR RGXDevInitCompatCheck_BVNC_HWAgainstDriver(PVRSRV_RGXDEV_INF
 	}
 #endif
 
-    bCompatibleAll = IMG_TRUE;
 	if (!bCompatibleAll)
 	{
 		if (!bCompatibleVersion)

@@ -87,7 +87,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #endif
 
 #if defined(DEBUG_BRIDGE_KM)
-static struct dentry *gpsPVRDebugFSBridgeStatsEntry = NULL;
+static PVR_DEBUGFS_ENTRY_DATA *gpsPVRDebugFSBridgeStatsEntry = NULL;
 static struct seq_operations gsBridgeStatsReadOps;
 #endif
 
@@ -157,7 +157,7 @@ LinuxBridgeInit(void)
 					&gsBridgeStatsReadOps,
 					NULL,
 					&g_BridgeDispatchTable[0],
-					&gpsPVRDebugFSBridgeStatsEntry);
+                    &gpsPVRDebugFSBridgeStatsEntry);
 	if (iResult != 0)
 	{
 		return PVRSRV_ERROR_OUT_OF_MEMORY;
@@ -349,8 +349,8 @@ void
 LinuxBridgeDeInit(void)
 {
 #if defined(DEBUG_BRIDGE_KM)
-	PVRDebugFSRemoveEntry(gpsPVRDebugFSBridgeStatsEntry);
-	gpsPVRDebugFSBridgeStatsEntry = NULL;
+    PVRDebugFSRemoveEntry(gpsPVRDebugFSBridgeStatsEntry);
+    gpsPVRDebugFSBridgeStatsEntry = NULL;
 #endif
 }
 
@@ -359,7 +359,7 @@ static void *BridgeStatsSeqStart(struct seq_file *psSeqFile, loff_t *puiPosition
 {
 	PVRSRV_BRIDGE_DISPATCH_TABLE_ENTRY *psDispatchTable = (PVRSRV_BRIDGE_DISPATCH_TABLE_ENTRY *)psSeqFile->private;
 
-	mutex_lock(&gPVRSRVLock);
+	OSAcquireBridgeLock();
 
 	if (psDispatchTable == NULL || (*puiPosition) > BRIDGE_DISPATCH_TABLE_ENTRY_COUNT)
 	{
@@ -379,7 +379,7 @@ static void BridgeStatsSeqStop(struct seq_file *psSeqFile, void *pvData)
 	PVR_UNREFERENCED_PARAMETER(psSeqFile);
 	PVR_UNREFERENCED_PARAMETER(pvData);
 
-	mutex_unlock(&gPVRSRVLock);
+	OSReleaseBridgeLock();
 }
 
 static void *BridgeStatsSeqNext(struct seq_file *psSeqFile,
@@ -459,10 +459,18 @@ PVRSRV_BridgeDispatchKM(struct file *pFile, unsigned int unref__ ioctlCmd, unsig
 	PVRSRV_BRIDGE_PACKAGE sBridgePackageKM;
 #endif
 	PVRSRV_BRIDGE_PACKAGE *psBridgePackageKM;
-	CONNECTION_DATA *psConnection = LinuxConnectionFromFile(pFile);
+	CONNECTION_DATA *psConnection;
 	IMG_INT err = -EFAULT;
 
-	mutex_lock(&gPVRSRVLock);
+	OSAcquireBridgeLock();
+
+	psConnection = LinuxConnectionFromFile(pFile);
+	if(psConnection == IMG_NULL)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Connection is closed", __FUNCTION__));
+		OSReleaseBridgeLock();
+		return err;
+	}
 
 #if defined(SUPPORT_DRM)
 	PVR_UNREFERENCED_PARAMETER(dev);
@@ -513,7 +521,7 @@ PVRSRV_BridgeDispatchKM(struct file *pFile, unsigned int unref__ ioctlCmd, unsig
 #if !defined(SUPPORT_DRM)
 unlock_and_return:
 #endif
-	mutex_unlock(&gPVRSRVLock);
+	OSReleaseBridgeLock();
 	return err;
 }
 
@@ -542,16 +550,27 @@ PVRSRV_BridgeCompatDispatchKM(struct file *pFile,
 	PVRSRV_BRIDGE_PACKAGE params_for_64;
 	struct bridge_package_from_32 params;
  	struct bridge_package_from_32 * const params_addr = &params;
-#if !defined(SUPPORT_DRM)
-	CONNECTION_DATA *psConnection = LinuxConnectionFromFile(pFile);
-#else
-	struct drm_file *file_priv = pFile->private_data;
-	CONNECTION_DATA *psConnection = LinuxConnectionFromFile(file_priv);
+#if defined(SUPPORT_DRM)
+	struct drm_file *file_priv;
 #endif
+	CONNECTION_DATA *psConnection;
+
 	// make sure there is no padding inserted by compiler
 	PVR_ASSERT(sizeof(struct bridge_package_from_32) == 6 * sizeof(IMG_UINT32));
 
-	mutex_lock(&gPVRSRVLock);
+	OSAcquireBridgeLock();
+
+#if !defined(SUPPORT_DRM)
+	psConnection = LinuxConnectionFromFile(pFile);
+#else
+	file_priv = pFile->private_data;
+	psConnection = LinuxConnectionFromFile(file_priv);
+#endif
+	if(psConnection == IMG_NULL)
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Connection is closed", __FUNCTION__));
+		goto unlock_and_return;
+	}
 
 	if(!OSAccessOK(PVR_VERIFY_READ, (void *) arg,
 				   sizeof(struct bridge_package_from_32)))
@@ -589,7 +608,7 @@ PVRSRV_BridgeCompatDispatchKM(struct file *pFile,
 	err = BridgedDispatchKM(psConnection, &params_for_64);
 	
 unlock_and_return:
-	mutex_unlock(&gPVRSRVLock);
+	OSReleaseBridgeLock();
 	return err;
 }
 #endif /* defined(CONFIG_COMPAT) */

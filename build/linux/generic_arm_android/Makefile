@@ -66,12 +66,18 @@ ifeq ($(TARGET_DEVICE),armv7-a-neon)
 KERNEL_CROSS_COMPILE ?= arm-eabi-
 endif
 
-HAL_VARIANT ?= generic
-PVR_SYSTEM := rgx_nohw
-NO_HARDWARE := 1
+ifeq ($(MULTIARCH),1)
+override TARGET_DEVICE := rk3368
+else
+override TARGET_DEVICE := rk3368_32
+endif
+HAL_VARIANT ?= rk3368
+PVR_SYSTEM := rk3368
+NO_HARDWARE := 0
 LDM_PLATFORM := 1
-
-RGX_BVNC ?= 1.75.2.30
+#RGX_BVNC ?= 1.75.2.30
+#rockchip G6110
+RGX_BVNC ?= 5.9.1.46
 
 include ../common/android/paths.mk
 include ../common/android/arch.mk
@@ -87,8 +93,15 @@ endif
 
 PVR_LDM_PLATFORM_PRE_REGISTERED := 1
 
+#zxl: build adf_fbdev.ko
+ifeq ($(SUPPORT_ADF),1)
+ADF_FBDEV ?= adf_fbdev
+KERNEL_COMPONENTS += $(ADF_FBDEV)
+endif
+
 ifneq ($(SUPPORT_ADF),1)
-DISPLAY_CONTROLLER ?= dc_example
+ifeq ($(SUPPORT_DC),1)
+DISPLAY_CONTROLLER ?= dc_fbdev
 KERNEL_COMPONENTS += $(DISPLAY_CONTROLLER)
 ifeq ($(DISPLAY_CONTROLLER),dc_example)
 DC_EXAMPLE_WIDTH ?= 640
@@ -97,6 +110,10 @@ DC_EXAMPLE_BIT_DEPTH ?= 32
 DC_EXAMPLE_DPI ?= 160
 endif
 endif
+endif
+
+#zxl: 3 fb buffer
+DC_FBDEV_NUM_PREFERRED_BUFFERS := 3
 
 CACHEFLUSH_TYPE ?= CACHEFLUSH_GENERIC
 

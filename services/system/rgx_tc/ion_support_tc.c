@@ -51,7 +51,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ion_support.h"
 #include "ion_sys.h"
 #include "ion_sys_private.h"
-#include "ion_lma_heap.h"
+#include "lma_heap_ion.h"
 
 struct ion_platform_data gsTCIonConfig = {
 	.nr = 1,

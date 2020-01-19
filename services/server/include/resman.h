@@ -49,6 +49,7 @@ extern "C" {
 #endif
 
 #include "servicesext.h"
+#include "dllist.h"
 
 /******************************************************************************
  * resman definitions 
@@ -95,6 +96,7 @@ enum {
     RESMAN_TYPE_MODIFY_SYNC_OPS,					/*!< Syncobject synchronisation Resource*/
     RESMAN_TYPE_SYNC_INFO,					        /*!< Syncobject Resource*/
 	PVRSRV_HANDLE_TYPE_DEV_PRIV_DATA,				/*!< Private Data Resource*/
+	RESMAN_TYPE_SYNC_RECORD_HANDLE,					/*!< Sync record handle */
 	RESMAN_TYPE_SYNC_PRIMITIVE,						/*!< Sync primitive resource */
 	RESMAN_TYPE_SYNC_PRIMITIVE_BLOCK,				/*!< Sync primitive block resource */
 	RESMAN_TYPE_SERVER_SYNC_PRIMITIVE,				/*!< Server sync primitive resource */
@@ -136,6 +138,13 @@ typedef PVRSRV_ERROR (*RESMAN_FREE_FN)(IMG_PVOID pvParam);
 typedef struct _RESMAN_ITEM_ *PRESMAN_ITEM;
 typedef struct _RESMAN_CONTEXT_ *PRESMAN_CONTEXT;
 typedef struct _RESMAN_DEFER_CONTEXTS_LIST_ *PRESMAN_DEFER_CONTEXTS_LIST;
+
+typedef struct _RESMAN_FREE_FN_AND_DATA_
+{
+	DLLIST_NODE sNode;
+	RESMAN_FREE_FN pfnFree;
+	IMG_VOID *pvParam;
+} RESMAN_FREE_FN_AND_DATA;
 
 /******************************************************************************
  * resman functions 
@@ -185,6 +194,10 @@ IMG_BOOL PVRSRVResManFlushDeferContext(PRESMAN_DEFER_CONTEXTS_LIST hDeferContext
                                        IMG_UINT64 ui64TimesliceLimit);
 
 IMG_VOID PVRSRVResManDestroyDeferContext(PRESMAN_DEFER_CONTEXTS_LIST hDeferContext);
+
+IMG_VOID PVRSRVResManAddNoBridgeLockCallback(RESMAN_FREE_FN_AND_DATA *psCallbackInfo);
+
+IMG_BOOL PVRSRVResManInDeferredCleanup(IMG_VOID);
 
 #if defined (__cplusplus)
 }

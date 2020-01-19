@@ -134,7 +134,7 @@ function install_locally {
     for arch in $ARCHITECTURES; do
         if [ ! -d $arch ]; then
             echo "Unknown architecture $arch.  Aborting"
-            exit 1
+            #exit 1
         fi
 
         case $arch in
