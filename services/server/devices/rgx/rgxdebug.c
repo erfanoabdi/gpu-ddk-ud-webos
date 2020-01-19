@@ -1952,6 +1952,22 @@ IMG_VOID RGXDebugRequestProcess(DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf,
 		return;
 	}
 
+	if (!pfnDumpDebugPrintf)
+	{
+		switch (ui32VerbLevel)
+		{
+			case DEBUG_REQUEST_VERBOSITY_LOW:
+				MTKPP_LOGTIME(MTKPP_ID_FW, "DEBUG_REQUEST_VERBOSITY_LOW");
+				break;
+			case DEBUG_REQUEST_VERBOSITY_MEDIUM:
+				MTKPP_LOGTIME(MTKPP_ID_FW, "DEBUG_REQUEST_VERBOSITY_MEDIUM");
+				break;
+			case DEBUG_REQUEST_VERBOSITY_HIGH:
+				MTKPP_LOGTIME(MTKPP_ID_FW, "DEBUG_REQUEST_VERBOSITY_HIGH");
+				break;
+		}
+	}
+
 	switch (ui32VerbLevel)
 	{
 		case DEBUG_REQUEST_VERBOSITY_LOW :

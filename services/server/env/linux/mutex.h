@@ -1,5 +1,6 @@
 /*************************************************************************/ /*!
-@Title          RGX Core BVNC 4.23.2.51
+@File
+@Title          Linux mutex interface
 @Copyright      Copyright (c) Imagination Technologies Ltd. All Rights Reserved
 @License        Dual MIT/GPLv2
 
@@ -39,33 +40,73 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */ /**************************************************************************/
 
-#ifndef _RGXCORE_KM_4_23_2_51_H_
-#define _RGXCORE_KM_4_23_2_51_H_
+#ifndef __INCLUDED_LINUX_MUTEX_H_
+#define __INCLUDED_LINUX_MUTEX_H_
 
-/***** Automatically generated file (7/28/2014 4:32:54 PM): Do not edit manually ********************/
-/***** Timestamp:  (7/28/2014 4:32:54 PM)************************************************************/
-/***** CS: @2791924 ******************************************************************/
+#include <linux/version.h>
+#include <linux/sched.h>
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,15))
+#include <linux/mutex.h>
+#else
+#include <asm/semaphore.h>
+#endif
 
-/******************************************************************************
- * BVNC = 4.23.2.51 
- *****************************************************************************/
-#define RGX_BVNC_KM_B 4
-#define RGX_BVNC_KM_V 23
-#define RGX_BVNC_KM_N 2
-#define RGX_BVNC_KM_C 51
-
-/******************************************************************************
- * Errata 
- *****************************************************************************/
+#include "pvrsrv_error.h"
 
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,15))
 
- 
-/******************************************************************************
- * Enhancements 
- *****************************************************************************/
+typedef struct {
+	struct mutex sMutex;
+	pid_t        hHeldBy;
+} PVRSRV_LINUX_MUTEX;
 
 
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,15)) */
 
-#endif /* _RGXCORE_KM_4_23_2_51_H_ */
+
+typedef struct {
+	struct semaphore sSemaphore;
+	/* since Linux's struct semaphore is intended to be
+	 * opaque we don't poke inside for the count and
+	 * instead we track it outselves. (So we can implement
+	 * LinuxIsLockedMutex)
+	 */
+	atomic_t Count;
+}PVRSRV_LINUX_MUTEX;
+
+#endif
+
+#if defined(CONFIG_PROVE_LOCKING)
+//#define LinuxInitMutex(l) mutex_init((l))
+static inline IMG_VOID LinuxInitMutex(PVRSRV_LINUX_MUTEX *psPVRSRVMutex)
+{
+	mutex_init(&psPVRSRVMutex->sMutex);
+	psPVRSRVMutex->hHeldBy = 0;
+
+#if defined(LINUX_DEBUG_MUTEX_CALLS)
+	if (&gPVRSRVLock == psPVRSRVMutex)
+	{
+		PVR_TRACE(("LinuxInitMutex %p: %d", psPVRSRVMutex, psPVRSRVMutex->hHeldBy));
+	}
+#endif
+}
+#else
+extern IMG_VOID LinuxInitMutex(PVRSRV_LINUX_MUTEX *psPVRSRVMutex);
+#endif
+
+extern IMG_VOID LinuxLockMutex(PVRSRV_LINUX_MUTEX *psPVRSRVMutex);
+
+extern PVRSRV_ERROR LinuxLockMutexInterruptible(PVRSRV_LINUX_MUTEX *psPVRSRVMutex);
+
+extern IMG_INT32 LinuxTryLockMutex(PVRSRV_LINUX_MUTEX *psPVRSRVMutex);
+
+extern IMG_VOID LinuxUnLockMutex(PVRSRV_LINUX_MUTEX *psPVRSRVMutex);
+
+extern IMG_BOOL LinuxIsLockedMutex(PVRSRV_LINUX_MUTEX *psPVRSRVMutex);
+
+extern IMG_BOOL LinuxIsLockedByMeMutex(PVRSRV_LINUX_MUTEX *psPVRSRVMutex);
+
+#endif /* __INCLUDED_LINUX_MUTEX_H_ */
+

@@ -44,6 +44,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <linux/mm.h>
 #include <asm/page.h>
 
+/* MTK: skip lockdep */
+#include <linux/lockdep.h>
+
 #include "img_defs.h"
 #include "mmap.h"
 #include "pvr_debug.h"
@@ -84,8 +87,28 @@ static struct mutex g_sMMapMutex;
 #endif
 static void MMapPMROpen(struct vm_area_struct* ps_vma)
 {
+	PVRSRV_ERROR eError = PVRSRV_OK;
+	PMR *psPMR = ps_vma->vm_private_data;
+
 	/* Our VM flags should ensure this function never gets called */
-	PVR_ASSERT(0);
+	PVR_DPF((PVR_DBG_ERROR, "%s: Unexpected open call, this is probably an application bug.", __func__));
+	PVR_DPF((PVR_DBG_ERROR,
+			 "%s: vma: %p, PMR: %p, vAddr: 0x%lX, length: %lu",
+			 __func__,
+			 ps_vma,
+			 psPMR,
+			 ps_vma->vm_start,
+			 ps_vma->vm_end - ps_vma->vm_start));
+
+	/* In case we get called anyway let's do things right by increasing refcount and
+	 * locking down the physical addresses. */
+	PMRRefPMR(psPMR);
+
+	eError = PMRLockSysPhysAddresses(psPMR, PAGE_SHIFT);
+	if (eError != PVRSRV_OK) {
+		PVR_DPF((PVR_DBG_ERROR, "%s: Could not lock down physical addresses, aborting.", __func__));
+		PMRUnrefPMR(psPMR);
+	}
 }
 
 static void MMapPMRClose(struct vm_area_struct *ps_vma)

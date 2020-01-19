@@ -2664,7 +2664,7 @@ PVRSRV_ERROR RGXSendCommandRaw(PVRSRV_RGXDEV_INFO 	*psDevInfo,
 	/*
 	 * Copy the command into the CCB.
 	 */
-	OSMemCopy(&pui8KCCB[ui32OldWriteOffset * psKCCBCtl->ui32CmdSize],
+	OSMemCopyMTK(&pui8KCCB[ui32OldWriteOffset * psKCCBCtl->ui32CmdSize],
 			  psKCCBCmd, psKCCBCtl->ui32CmdSize);
 
 	/* ensure kCCB data is written before the offsets */
@@ -3718,7 +3718,7 @@ PVRSRV_ERROR RGXUpdateHealthStatus(PVRSRV_DEVICE_NODE* psDevNode,
 	*/
 	if (psDevInfo->ui32GEOTimeoutsLastTime > 1  &&  psPVRSRVData->ui32GEOConsecutiveTimeouts > psDevInfo->ui32GEOTimeoutsLastTime)
 	{
-		PVR_DPF((PVR_DBG_WARNING, "RGXGetDeviceHealthStatus: Global Event Object Timeouts have risen (from %d to %d)",
+		PVR_DPF((PVR_DBG_ERROR, "RGXGetDeviceHealthStatus: Global Event Object Timeouts have risen (from %d to %d)",
 				psDevInfo->ui32GEOTimeoutsLastTime, psPVRSRVData->ui32GEOConsecutiveTimeouts));
 		eNewStatus = PVRSRV_DEVICE_HEALTH_STATUS_NOT_RESPONDING;
 	}
@@ -3739,7 +3739,7 @@ PVRSRV_ERROR RGXUpdateHealthStatus(PVRSRV_DEVICE_NODE* psDevNode,
 			if (psKCCBCtl->ui32ReadOffset > psKCCBCtl->ui32WrapMask  ||
 				psKCCBCtl->ui32WriteOffset > psKCCBCtl->ui32WrapMask)
 			{
-				PVR_DPF((PVR_DBG_WARNING, "RGXGetDeviceHealthStatus: KCCB for DM%d has invalid offset (ROFF=%d WOFF=%d)",
+				PVR_DPF((PVR_DBG_ERROR, "RGXGetDeviceHealthStatus: KCCB for DM%d has invalid offset (ROFF=%d WOFF=%d)",
 				        ui32DMCount, psKCCBCtl->ui32ReadOffset, psKCCBCtl->ui32WriteOffset));
 				eNewStatus = PVRSRV_DEVICE_HEALTH_STATUS_NOT_RESPONDING;
 			}

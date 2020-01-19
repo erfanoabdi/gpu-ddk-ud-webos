@@ -67,8 +67,14 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  * data to inspect during ->release().
  */
 
+#define MTK_debug_FILE_PRIV
+    
 typedef struct
 {
+#ifdef MTK_debug_FILE_PRIV
+    uint64_t magic;
+#endif
+
 	IMG_PVOID pvConnectionData;
 
 #if defined(PVR_SECURE_FD_EXPORT)

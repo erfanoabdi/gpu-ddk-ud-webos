@@ -44,28 +44,39 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if !defined(__SYSINFO_H__)
 #define __SYSINFO_H__
 
+
+
 /*!< System specific poll/timeout details */
-#define MAX_HW_TIME_US                           (500000)
+#if defined(PVR_LINUX_USING_WORKQUEUES)
+#define MAX_HW_TIME_US				(1000000)
+#define FATAL_ERROR_DETECTION_POLL_MS  (10000)
+#define WAIT_TRY_COUNT				(20000)
+#else
+#define MAX_HW_TIME_US				(500000)
+#define FATAL_ERROR_DETECTION_POLL_MS  (10000)
+#define WAIT_TRY_COUNT				(10000)
+#endif
+
 #define DEVICES_WATCHDOG_POWER_ON_SLEEP_TIMEOUT  (10000)
 #define DEVICES_WATCHDOG_POWER_OFF_SLEEP_TIMEOUT (3600000)
-#define WAIT_TRY_COUNT                           (10000)
+
 
 #define SYS_DEVICE_COUNT 3 /* RGX, DISPLAY (external), BUFFER (external) */
 
-#if defined(TDMETACODE)
-/* in systems that support trusted device address protection, there are three
-   physical heaps from which pages should be allocated:
-   - one heap for normal allocations
-   - one heap for allocations holding META code memory
-   - one heap for allocations holding secured DRM data
-*/
-#define SYS_PHYS_HEAP_COUNT		3
-#else
 #define SYS_PHYS_HEAP_COUNT		1
-#endif
 
 #if defined(__linux__)
-#define SYS_RGX_DEV_NAME    "rgxsunxi"
+#define SYS_RGX_DEV_NAME    "pvrsrvkm"
+#if defined(SUPPORT_DRM)
+/*
+ * Use the static bus ID for the platform DRM device.
+ */
+#if defined(PVR_DRM_DEV_BUS_ID)
+#define	SYS_RGX_DEV_DRM_BUS_ID	PVR_DRM_DEV_BUS_ID
+#else
+#define SYS_RGX_DEV_DRM_BUS_ID	"platform:pvrsrvkm"
+#endif	/* defined(PVR_DRM_DEV_BUS_ID) */
+#endif	/* defined(SUPPORT_DRM) */
 #endif
 
 #endif	/* !defined(__SYSINFO_H__) */

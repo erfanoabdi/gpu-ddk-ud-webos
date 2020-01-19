@@ -1548,15 +1548,6 @@ PMRAcquireKernelMappingDataOSMem(PMR_IMPL_PRIVDATA pvPriv,
         goto e0;
     }
 
-#if defined(CONFIG_ARM64)
-    //zxl:ARM64 use noncached,which is setted MT_DEVICE,And Device type may unsupport some operations.
-    //    Force to use pgprot_writecombine now.
-    if(ui32CPUCacheFlags == PVRSRV_MEMALLOCFLAG_CPU_UNCACHED)
-    {
-        ui32CPUCacheFlags = PVRSRV_MEMALLOCFLAG_CPU_WRITE_COMBINE;
-    }
-#endif
-
 	switch (ui32CPUCacheFlags)
 	{
 		case PVRSRV_MEMALLOCFLAG_CPU_UNCACHED:
@@ -1581,11 +1572,12 @@ PMRAcquireKernelMappingDataOSMem(PMR_IMPL_PRIVDATA pvPriv,
 		eError = PVRSRV_ERROR_OUT_OF_MEMORY;
 		goto e0;
 	}
-	
-	pvAddress = vm_map_ram(&psOSPageArrayData->pagearray[ui32PageOffset],
-						   ui32PageCount,
-						   -1,
-						   prot);
+
+	pvAddress = vmap(&psOSPageArrayData->pagearray[ui32PageOffset],
+	                 ui32PageCount,
+	                 VM_READ | VM_WRITE,
+	                 prot);
+
 	if (pvAddress == IMG_NULL)
 	{
 		eError = PVRSRV_ERROR_OUT_OF_MEMORY;
@@ -1616,7 +1608,7 @@ static void PMRReleaseKernelMappingDataOSMem(PMR_IMPL_PRIVDATA pvPriv,
 
     psOSPageArrayData = pvPriv;
     psData = hHandle;
-    vm_unmap_ram(psData->pvBase, psData->ui32PageCount);
+    vunmap(psData->pvBase);
     OSFreeMem(psData);
 }
 

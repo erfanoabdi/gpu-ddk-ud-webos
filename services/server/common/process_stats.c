@@ -109,13 +109,7 @@ typedef enum
     PVRSRV_PROCESS_STAT_TYPE_MAX_ALLOC_UMA_PAGES,
     PVRSRV_PROCESS_STAT_TYPE_MAP_UMA_LMA_PAGES,
     PVRSRV_PROCESS_STAT_TYPE_MAX_MAP_UMA_LMA_PAGES,
-
-    //zxl: count total data
-	PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC,
-	PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_ALLOC,
-	PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP,
-	PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_MAP,
-
+	
 	/* Must be the last enum...*/
 	PVRSRV_PROCESS_STAT_TYPE_COUNT
 } PVRSRV_PROCESS_STAT_TYPE;
@@ -176,12 +170,6 @@ static IMG_CHAR*  pszProcessStatFmt[PVRSRV_PROCESS_STAT_TYPE_COUNT] = {
     "MemoryUsageAllocGPUMemUMAMax      %10d\n", /* PVRSRV_STAT_TYPE_MAX_ALLOC_UMA_PAGES */
     "MemoryUsageMappedGPUMemUMA/LMA    %10d\n", /* PVRSRV_STAT_TYPE_MAP_UMA_LMA_PAGES */
     "MemoryUsageMappedGPUMemUMA/LMAMax %10d\n", /* PVRSRV_STAT_TYPE_MAX_MAP_UMA_LMA_PAGES */
-
-    //zxl: count total data
-    "MemoryUsageTotalAlloc             %10d\n", /* PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC */
-    "MemoryUsageTotalAllocMax          %10d\n", /* PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_ALLOC */
-    "MemoryUsageTotalMap               %10d\n", /* PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP */
-    "MemoryUsageTotalMapMax            %10d\n", /* PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_MAP */
 };
 
 
@@ -214,6 +202,7 @@ typedef struct _PVRSRV_PROCESS_STATS_ {
 
 	/* OS level process ID */
 	IMG_PID                           pid;
+	IMG_CHAR                          pname[MAX_PROC_NAME_LENGTH]; /* ACOS_MOD_ONELINE {fwk_crash_log_collection} */
 	IMG_UINT32                        ui32RefCount;
 	IMG_UINT32                        ui32MemRefCount;
 
@@ -313,12 +302,6 @@ typedef struct _PVRSRV_GLOBAL_MEMORY_STATS_
 	IMG_UINT32 ui32MemoryUsageAllocGPUMemUMAMax;
 	IMG_UINT32 ui32MemoryUsageMappedGPUMemUMA_LMA;
 	IMG_UINT32 ui32MemoryUsageMappedGPUMemUMA_LMAMax;
-
-	//zxl: count total data
-	IMG_UINT32 ui32MemoryUsageTotalAlloc;
-	IMG_UINT32 ui32MemoryUsageTotalAllocMax;
-	IMG_UINT32 ui32MemoryUsageTotalMap;
-    IMG_UINT32 ui32MemoryUsageTotalMapMax;
 } PVRSRV_GLOBAL_MEMORY_STATS;
 
 #if defined(PVRSRV_ENABLE_MEMORY_STATS)
@@ -1118,13 +1101,6 @@ static void _decrease_global_stat(PVRSRV_MEM_ALLOC_TYPE eAllocType,
 			PVR_ASSERT(0);
 			break;
 	}
-	//Count total data
-    gsGlobalStats.ui32MemoryUsageTotalAlloc = gsGlobalStats.ui32MemoryUsageKMalloc + gsGlobalStats.ui32MemoryUsageVMalloc +\
-        gsGlobalStats.ui32MemoryUsageAllocPTMemoryUMA + gsGlobalStats.ui32MemoryUsageAllocPTMemoryLMA +\
-        gsGlobalStats.ui32MemoryUsageAllocGPUMemLMA + gsGlobalStats.ui32MemoryUsageAllocGPUMemUMA;
-
-    gsGlobalStats.ui32MemoryUsageTotalMap = gsGlobalStats.ui32MemoryUsageVMapPTUMA + gsGlobalStats.ui32MemoryUsageIORemapPTLMA +\
-        gsGlobalStats.ui32MemoryUsageMappedGPUMemUMA_LMA;
 }
 
 
@@ -1209,15 +1185,6 @@ static void _increase_global_stat(PVRSRV_MEM_ALLOC_TYPE eAllocType,
 			PVR_ASSERT(0);
 			break;
 	}
-	//Count total data
-	gsGlobalStats.ui32MemoryUsageTotalAlloc = gsGlobalStats.ui32MemoryUsageKMalloc + gsGlobalStats.ui32MemoryUsageVMalloc +\
-        gsGlobalStats.ui32MemoryUsageAllocPTMemoryUMA + gsGlobalStats.ui32MemoryUsageAllocPTMemoryLMA +\
-        gsGlobalStats.ui32MemoryUsageAllocGPUMemLMA + gsGlobalStats.ui32MemoryUsageAllocGPUMemUMA;
-    UPDATE_MAX_VALUE(gsGlobalStats.ui32MemoryUsageTotalAllocMax,gsGlobalStats.ui32MemoryUsageTotalAlloc);
-
-    gsGlobalStats.ui32MemoryUsageTotalMap = gsGlobalStats.ui32MemoryUsageVMapPTUMA + gsGlobalStats.ui32MemoryUsageIORemapPTLMA +\
-        gsGlobalStats.ui32MemoryUsageMappedGPUMemUMA_LMA;
-    UPDATE_MAX_VALUE(gsGlobalStats.ui32MemoryUsageTotalMapMax,gsGlobalStats.ui32MemoryUsageTotalMap);
 }
 
 
@@ -1232,6 +1199,7 @@ PVRSRVStatsRegisterProcess(IMG_HANDLE* phProcessStats)
 {
     PVRSRV_PROCESS_STATS*  psProcessStats;
     IMG_PID                currentPid = OSGetCurrentProcessIDKM();
+    IMG_PCHAR              currentPName = OSGetCurrentProcessNameKM(); /* ACOS_MOD_ONELINE {fwk_crash_log_collection} */
     IMG_BOOL               bMoveProcess = IMG_FALSE;
 
     PVR_ASSERT(phProcessStats != IMG_NULL);
@@ -1289,6 +1257,7 @@ PVRSRVStatsRegisterProcess(IMG_HANDLE* phProcessStats)
 
 	psProcessStats->eStructureType  = PVRSRV_STAT_STRUCTURE_PROCESS;
 	psProcessStats->pid             = currentPid;
+	snprintf(psProcessStats->pname, sizeof(psProcessStats->pname) - 1, currentPName); /* ACOS_MOD_BEGIN {fwk_crash_log_collection} */
 	psProcessStats->ui32RefCount    = 1;
 	psProcessStats->ui32MemRefCount = 1;
 
@@ -1587,19 +1556,6 @@ PVRSRVStatsAddMemAllocRecord(PVRSRV_MEM_ALLOC_TYPE eAllocType,
 		break;
 	}
 
-//Count total data
-psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC] += psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_KMALLOC] +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMALLOC] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_UMA] +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_LMA] + PVRSRV_MEM_ALLOC_TYPE_ALLOC_LMA_PAGES +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_UMA_PAGES] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAP_UMA_LMA_PAGES];
-UPDATE_MAX_VALUE(psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_ALLOC],
-				 psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC]);
-
-psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP] += psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMAP_PT_UMA] +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_IOREMAP_PT_LMA];
-UPDATE_MAX_VALUE(psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_MAP],
-				 psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP]);
-
 	OSLockRelease(psLinkedListLock);
 #else
 PVR_UNREFERENCED_PARAMETER(eAllocType);
@@ -1850,14 +1806,6 @@ PVRSRVStatsRemoveMemAllocRecord(PVRSRV_MEM_ALLOC_TYPE eAllocType,
 		psMemoryStats->psLastStatMemoryRecordFound = IMG_NULL;
 		List_PVRSRV_MEM_ALLOC_REC_Remove(psRecord);
 	}
-//Count total data
-psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC] = psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_KMALLOC] +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMALLOC] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_UMA] +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_LMA] + PVRSRV_MEM_ALLOC_TYPE_ALLOC_LMA_PAGES +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_UMA_PAGES] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAP_UMA_LMA_PAGES];
-
-psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP] = psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMAP_PT_UMA] +\
-    psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_IOREMAP_PT_LMA];
 
 	OSLockRelease(psLinkedListLock);
 
@@ -1990,18 +1938,6 @@ PVRSRVStatsIncrMemAllocStat(PVRSRV_MEM_ALLOC_TYPE eAllocType,
 			}
 			break;
 		}
-        //Count total data
-        psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC] = psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_KMALLOC] +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMALLOC] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_UMA] +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_LMA] + PVRSRV_MEM_ALLOC_TYPE_ALLOC_LMA_PAGES +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_UMA_PAGES] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAP_UMA_LMA_PAGES];
-        UPDATE_MAX_VALUE(psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_ALLOC],
-                        psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC]);
-
-        psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP] = psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMAP_PT_UMA] +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_IOREMAP_PT_LMA];
-        UPDATE_MAX_VALUE(psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAX_TOTAL_MAP],
-                        psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP]);
     }
 }
 
@@ -2166,14 +2102,6 @@ PVRSRVStatsDecrMemAllocStat(PVRSRV_MEM_ALLOC_TYPE eAllocType,
 			}
 			break;
 		}
-		//Count total data
-        psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_ALLOC] = psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_KMALLOC] +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMALLOC] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_UMA] +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_PAGES_PT_LMA] + PVRSRV_MEM_ALLOC_TYPE_ALLOC_LMA_PAGES +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_UMA_PAGES] + psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_MAP_UMA_LMA_PAGES];
-
-        psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_TOTAL_MAP] = psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_VMAP_PT_UMA] +\
-            psProcessStats->i32StatValue[PVRSRV_PROCESS_STAT_TYPE_IOREMAP_PT_LMA];
 	}
 }
 
@@ -2862,27 +2790,6 @@ _PVRSRVGetGlobalMemStat(IMG_PVOID pvStatPtr,
 			(*pi32StatData) = (IMG_INT32) gsGlobalStats.ui32MemoryUsageMappedGPUMemUMA_LMAMax;
 			break;
 
-        //zxl: count total data
-        case 18:
-			(*ppszStatFmtText) = "MemoryUsageTotalAlloc             %10u\n";
-			(*pi32StatData) = (IMG_INT32) gsGlobalStats.ui32MemoryUsageTotalAlloc;
-			break;
-
-        case 19:
-			(*ppszStatFmtText) = "MemoryUsageTotalAllocMax          %10u\n";
-			(*pi32StatData) = (IMG_INT32) gsGlobalStats.ui32MemoryUsageTotalAllocMax;
-			break;
-
-        case 20:
-			(*ppszStatFmtText) = "MemoryUsageTotalMap               %10u\n";
-			(*pi32StatData) = (IMG_INT32) gsGlobalStats.ui32MemoryUsageTotalMap;
-			break;
-
-        case 21:
-			(*ppszStatFmtText) = "MemoryUsageTotalMapMax            %10u\n";
-			(*pi32StatData) = (IMG_INT32) gsGlobalStats.ui32MemoryUsageTotalMapMax;
-			break;
-
 		default:
 			return IMG_FALSE;
 	}
@@ -2890,3 +2797,35 @@ _PVRSRVGetGlobalMemStat(IMG_PVOID pvStatPtr,
 	
 	return IMG_TRUE;
 }
+
+/* ACOS_MOD_BEGIN {fwk_crash_log_collection} */
+extern void lmk_add_to_buffer(const char *fmt, ...);
+
+void gpu_mem_debug_lmk(void)
+{
+	int totalGpuMem;
+	PVRSRV_PROCESS_STATS *psProcessStats = psLiveList;
+	OSLockAcquire(psLinkedListLock);
+	lmk_add_to_buffer("%-25s  %-10s  %-10s  %-15s  %-10s  %-15s  %-10s\n"\
+		"==============================================================================================================\n",
+		 "Name", "pid", "total_mem", "gpu_mem_lma", "lma_max",
+		 "gpu_mem_uma", "uma_max");
+	totalGpuMem = 0;
+	while (psProcessStats != IMG_NULL) {
+		IMG_INT32 *statValue = psProcessStats->i32StatValue;
+		int processGpuMemTotal = statValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_LMA_PAGES] + statValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_UMA_PAGES];
+		totalGpuMem += processGpuMemTotal;
+		lmk_add_to_buffer("  %-25s  %-10u  %-10u  %-15u  %-10u  %-15u  %-10u\n",
+		psProcessStats->pname,
+		psProcessStats->pid,
+		processGpuMemTotal,
+		statValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_LMA_PAGES],
+		statValue[PVRSRV_PROCESS_STAT_TYPE_MAX_ALLOC_LMA_PAGES],
+		statValue[PVRSRV_PROCESS_STAT_TYPE_ALLOC_UMA_PAGES],
+		statValue[PVRSRV_PROCESS_STAT_TYPE_MAX_ALLOC_UMA_PAGES]);
+		psProcessStats = psProcessStats->psNext;
+	}
+	lmk_add_to_buffer("total gpu memory: %d\n", totalGpuMem);
+	OSLockRelease(psLinkedListLock);
+}
+/* ACOS_MOD_END {fwk_crash_log_collection} */

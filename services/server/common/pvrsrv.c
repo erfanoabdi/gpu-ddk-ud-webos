@@ -74,6 +74,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "debug_request_ids.h"
 #include "pvrsrv.h"
 
+#include "mtk_pp.h"
+
 #if defined(PVR_RI_DEBUG)
 #include "ri_server.h"
 #endif
@@ -546,6 +548,18 @@ static IMG_VOID DevicesWatchdogThread(IMG_PVOID pvData)
 					{
 						PVR_DPF((PVR_DBG_ERROR, "DevicesWatchdogThread: Device not responding!!!"));
 						PVRSRVDebugRequest(DEBUG_REQUEST_VERBOSITY_MAX, IMG_NULL);
+
+						/* get the log */
+						{
+							static int triggered = 0;
+
+							if (triggered == 0)
+							{
+								MTKPP_TriggerAEE();
+							}
+
+							triggered = 1;
+						}
 					}
 				}
 			}
@@ -1444,12 +1458,37 @@ static PVRSRV_ERROR PVRSRVFinaliseSystem_SetPowerState_AnyCb(PVRSRV_DEVICE_NODE 
 {
 	PVRSRV_ERROR eError;
 	PVRSRV_DEV_POWER_STATE ePowState;
+    
+#if defined(MTK_USE_HW_APM) && defined(CONFIG_ARCH_MT8135)
+	PVRSRV_RGXDEV_INFO *psDevInfo = psDeviceNode->pvDevice;
+	RGXFWIF_TRACEBUF *psFWTraceBuf = psDevInfo->psRGXFWIfTraceBuf;
+
+	ePowState = va_arg(va, PVRSRV_DEV_POWER_STATE);
+    
+#ifdef MTK_DEBUG
+	PVR_DPF((PVR_DBG_ERROR,"PVRSRVFinaliseSystem: ePowtate: %d, psFWTraceBuf->ePowState = %d", ePowState, psFWTraceBuf->ePowState));
+#endif
+
+	/*Check the if IDLE*/
+	if ((ePowState == PVRSRV_DEV_POWER_STATE_ON) || (psFWTraceBuf->ePowState == RGXFWIF_POW_IDLE))
+	{
+	    eError = PVRSRVSetDevicePowerStateKM(psDeviceNode->sDevId.ui32DeviceIndex, ePowState, IMG_TRUE);
+	}
+	else
+	{
+	    eError = PVRSRV_OK;
+#ifdef MTK_DEBUG
+	    PVR_DPF((PVR_DBG_ERROR, "PVRSRVFinaliseSystem: GPU is still running"));
+#endif
+	}
+#else
 
 	ePowState = va_arg(va, PVRSRV_DEV_POWER_STATE);
 
 	eError = PVRSRVSetDevicePowerStateKM(psDeviceNode->sDevId.ui32DeviceIndex,
 										 ePowState,
 										 IMG_TRUE);
+#endif
 
 	if (eError != PVRSRV_OK)
 	{
@@ -2258,6 +2297,11 @@ IMG_VOID IMG_CALLCONV PVRSRVDebugRequest(IMG_UINT32 ui32VerbLevel, DUMPDEBUG_PRI
 	OSWRLockAcquireRead(g_hDbgNotifyLock, GLOBAL_DBGNOTIFY);
 
 	PVR_DUMPDEBUG_LOG(("------------[ PVR DBG: START ]------------"));
+
+	if (!pfnDumpDebugPrintf)
+	{
+		MTKPP_LOGTIME(MTKPP_ID_FW, "Dump Debug Data");
+	}
 
 	/* For each verbosity level */
 	for (j=0;j<(ui32VerbLevel+1);j++)

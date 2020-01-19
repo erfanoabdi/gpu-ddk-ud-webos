@@ -49,7 +49,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "pvrsrv.h"
 #include "pvr_debug.h"
 #include "process_stats.h"
-#include "rk_init.h"
 
 static IMG_BOOL gbInitServerRunning = IMG_FALSE;
 static IMG_BOOL gbInitServerRan = IMG_FALSE;
@@ -692,10 +691,6 @@ PVRSRV_ERROR PVRSRVRegisterPowerDevice(IMG_UINT32					ui32DeviceIndex,
 	/* insert into power device list */
 	List_PVRSRV_POWER_DEV_Insert(&(psPVRSRVData->psPowerDeviceList), psPowerDevice);
 
-#if RK33_DVFS_SUPPORT && RK33_USE_RGX_GET_GPU_UTIL
-    //zxl:set device node to get pfnGetGpuUtilStats in rk_init.c
-    rk33_set_device_node(hDevCookie);
-#endif
 	return (PVRSRV_OK);
 }
 
@@ -731,11 +726,6 @@ PVRSRV_ERROR PVRSRVRemovePowerDevice (IMG_UINT32 ui32DeviceIndex)
 		OSFreeMem(psPowerDev);
 		/*not nulling pointer, copy on stack*/
 	}
-
-#if RK33_DVFS_SUPPORT && RK33_USE_RGX_GET_GPU_UTIL
-    //zxl:clear device node
-    rk33_clear_device_node();
-#endif
 
 	return (PVRSRV_OK);
 }
@@ -852,7 +842,7 @@ PVRSRV_ERROR PVRSRVDevicePreClockSpeedChange(IMG_UINT32	ui32DeviceIndex,
 			return eError;
 		}
 
-		if (psPowerDevice && psPowerDevice->pfnPostClockSpeedChange)
+		if (psPowerDevice && psPowerDevice->pfnPreClockSpeedChange)
 		{
 			eError = psPowerDevice->pfnPreClockSpeedChange(psPowerDevice->hDevCookie,
 														   bIdleDevice,

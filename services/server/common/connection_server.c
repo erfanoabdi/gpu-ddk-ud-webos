@@ -164,7 +164,10 @@ PVRSRV_ERROR PVRSRVConnectionConnect(IMG_PVOID *ppvPrivData, IMG_PVOID pvOSData)
 	
 	/* Allocate process statistics */
 #if defined(PVRSRV_ENABLE_PROCESS_STATS)
+	/* MTK: break the lockdep */
+	OSReleaseBridgeLock();
 	eError = PVRSRVStatsRegisterProcess(&psConnection->hProcessStats);
+    OSAcquireBridgeLock();
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR, "PVRSRVConnectionConnect: Couldn't register process statistics (%d)", eError));
@@ -189,8 +192,11 @@ IMG_VOID PVRSRVConnectionDisconnect(IMG_PVOID pvDataPtr)
 
 	/* Close the process statistics */
 #if defined(PVRSRV_ENABLE_PROCESS_STATS)
+	/* MTK: break the lockdep */
+	OSReleaseBridgeLock();
 	PVRSRVStatsDeregisterProcess(psConnection->hProcessStats);
 	psConnection->hProcessStats = 0;
+    OSAcquireBridgeLock();
 #endif
 
 	/* Close the Resource Manager connection */

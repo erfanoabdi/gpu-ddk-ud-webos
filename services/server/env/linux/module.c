@@ -125,11 +125,26 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(SUPPORT_KERNEL_HWPERF) || defined(SUPPORT_SHARED_SLC)
 #include "rgxapi_km.h"
 #endif
-#include "pvrversion.h"  //add by zxl
 
-#if defined(CONFIG_OF)
+#include "mtk_mfgsys.h"
+
+#if defined(MTK_DEBUG_PROC_PRINT)
+#include "mtk_pp.h"
+#endif
+
+#if defined(MTK_CONFIG_OF) && defined(CONFIG_OF)
 #include <linux/of.h>
-#include <linux/of_device.h>
+
+static const struct of_device_id mtk_dt_ids[] = {
+	{ .compatible = "mediatek,HAN" },
+	{ /* sentinel */ }
+};
+MODULE_DEVICE_TABLE(of, mtk_dt_ids);
+#endif
+
+/* MTK: fixme */
+#ifndef MODULE
+#define MODULE
 #endif
 
 /*
@@ -309,6 +324,9 @@ static LDM_DRV powervr_driver = {
 	.driver = {
 		.name	= DRVNAME,
 		.pm	= &powervr_dev_pm_ops,
+#if defined(MTK_CONFIG_OF) && defined(CONFIG_OF)
+		.of_match_table = of_match_ptr(mtk_dt_ids),
+#endif
 	},
 #endif
 #if defined(LDM_PCI)
@@ -329,7 +347,6 @@ static LDM_DRV powervr_driver = {
 };
 
 LDM_DEV *gpsPVRLDMDev;
-EXPORT_SYMBOL(gpsPVRLDMDev);
 
 #if defined(LDM_PLATFORM)
 #if defined(MODULE) && !defined(PVR_USE_PRE_REGISTERED_PLATFORM_DEV)
@@ -542,7 +559,7 @@ static IMG_BOOL bDriverIsShutdown;
 static void PVRSRVDriverShutdown(LDM_DEV *pDevice)
 {
 	PVR_TRACE(("PVRSRVDriverShutdown (pDevice=%p)", pDevice));
-
+#if 0
 	mutex_lock(&gsPMMutex);
 
 	if (!bDriverIsShutdown && !bDriverIsSuspended)
@@ -561,6 +578,7 @@ static void PVRSRVDriverShutdown(LDM_DEV *pDevice)
 
 	/* The bridge mutex is held on exit */
 	mutex_unlock(&gsPMMutex);
+#endif
 }
 
 /*!
@@ -687,6 +705,10 @@ static int PVRSRVOpen(struct inode unref__ * pInode, struct file *pFile)
 
 	if(psPrivateData == IMG_NULL)
 		goto err_unlock;
+    
+#ifdef MTK_debug_FILE_PRIV
+	psPrivateData->magic = (uintptr_t)psPrivateData;
+#endif
 
 	/*
 		Here we pass the file pointer which will passed through to our
@@ -782,7 +804,7 @@ CONNECTION_DATA *LinuxConnectionFromFile(struct file *pFile)
 {
 	PVRSRV_FILE_PRIVATE_DATA *psPrivateData = PRIVATE_DATA(pFile);
 
-	return psPrivateData->pvConnectionData;
+	return (psPrivateData == IMG_NULL) ? IMG_NULL : psPrivateData->pvConnectionData;
 }
 
 struct file *LinuxFileFromEnvConnection(ENV_CONNECTION_DATA *psEnvConnection)
@@ -1060,6 +1082,11 @@ static int __init PVRCore_Init(void)
 	}
 #endif
 
+	PVR_TRACE(("PVRCore_Init Done"));
+
+	/* MTK MFG system entry */
+	MTKMFGSystemInit();
+
 	return 0;
 
 #if !defined(SUPPORT_DRM)
@@ -1132,6 +1159,13 @@ dbgdrv_cleanup:
 static void __exit PVRCore_Cleanup(void)
 {
 	PVR_TRACE(("PVRCore_Cleanup"));
+    
+#if defined(MTK_DEBUG_PROC_PRINT)
+	MTKPP_Deinit();
+#endif
+
+	/* MTK MFG sytem cleanup */
+	MTKMFGSystemDeInit();
 
 #if defined(SUPPORT_GPUTRACE_EVENTS)
 	PVRGpuTraceDeInit();

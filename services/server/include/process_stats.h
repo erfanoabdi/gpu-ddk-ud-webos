@@ -169,4 +169,7 @@ IMG_VOID SetFirmwareStartTime(IMG_UINT32 ui32TimeStamp);
 
 IMG_VOID SetFirmwareHandshakeIdleTime(IMG_UINT64 ui64Duration);
 
+/* ACOS_MOD_BEGIN {fwk_crash_log_collection} */
+void gpu_mem_debug_lmk(void);
+/* ACOS_MOD_END {fwk_crash_log_collection} */
 #endif /* __PROCESS_STATS_H__ */

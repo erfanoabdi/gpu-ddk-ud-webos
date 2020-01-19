@@ -146,6 +146,13 @@ typedef struct PVRSRV_DBGREQ_NOTIFY_TAG
  a custom function.
 
 ******************************************************************************/
+#include "mtk_pp.h"
+    
+/* #if defined(MTK_DEBUG) && defined(MTK_DEBUG_PROC_PRINT) */
+#if 0
+#define _MTKPP_GPULOG_FW(...) MTKPP_LOG(MTKPP_ID_FW, __VA_ARGS__)
+#define PVR_DUMPDEBUG_LOG(x)  do { if (pfnDumpDebugPrintf) {pfnDumpDebugPrintf x;} else {_MTKPP_GPULOG_FW x;} } while(0)
+#else
 #define PVR_DUMPDEBUG_LOG(x)					\
 	do											\
 	{											\
@@ -158,6 +165,7 @@ typedef struct PVRSRV_DBGREQ_NOTIFY_TAG
 			PVR_LOG(x);							\
 		}										\
 	} while(0)
+#endif
 
 /*!
 *******************************************************************************

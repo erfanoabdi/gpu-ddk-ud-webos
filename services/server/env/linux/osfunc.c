@@ -212,7 +212,7 @@ PVRSRV_ERROR OSMMUPxAlloc(PVRSRV_DEVICE_NODE *psDevNode, IMG_SIZE_T uiSize,
 		IMG_CPU_PHYADDR sCPUPhysAddrStart, sCPUPhysAddrEnd;
 		IMG_PVOID pvPageVAddr = kmap(psPage);
 
-		sCPUPhysAddrStart.uiAddr = page_to_phys(psPage);
+		sCPUPhysAddrStart.uiAddr = IMG_CAST_TO_CPUPHYADDR_UINT(page_to_phys(psPage));
 		sCPUPhysAddrEnd.uiAddr = sCPUPhysAddrStart.uiAddr + PAGE_SIZE;
 
 		OSInvalidateCPUCacheRangeKM(pvPageVAddr,
@@ -223,7 +223,7 @@ PVRSRV_ERROR OSMMUPxAlloc(PVRSRV_DEVICE_NODE *psDevNode, IMG_SIZE_T uiSize,
 #endif
 
 	psMemHandle->u.pvHandle = psPage;
-	sCpuPAddr.uiAddr = page_to_phys(psPage);
+	sCpuPAddr.uiAddr = IMG_CAST_TO_CPUPHYADDR_UINT(page_to_phys(psPage));
 
 	PhysHeapCpuPAddrToDevPAddr(psDevNode->apsPhysHeap[PVRSRV_DEVICE_PHYS_HEAP_CPU_LOCAL], psDevPAddr, &sCpuPAddr);
 
@@ -310,10 +310,7 @@ PVRSRV_ERROR OSMMUPxMap(PVRSRV_DEVICE_NODE *psDevNode, Px_HANDLE *psMemHandle,
 	if (uiCPUVAddr == 0)
 #endif	/* defined(CONFIG_GENERIC_ALLOCATOR) && defined(CONFIG_X86) && (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0)) */
 	{
-		uiCPUVAddr = (IMG_UINTPTR_T) vm_map_ram(ppsPage,
-												1,
-												-1,
-												prot);
+		uiCPUVAddr = (IMG_UINTPTR_T) vmap(ppsPage, 1, VM_READ | VM_WRITE, prot);
 	}
 
 	/* Check that one of the above methods got us an address */
@@ -377,7 +374,7 @@ void OSMMUPxUnmap(PVRSRV_DEVICE_NODE *psDevNode, Px_HANDLE *psMemHandle, void *p
 	else
 #endif	/* defined(CONFIG_GENERIC_ALLOCATOR) && defined(CONFIG_X86) && (LINUX_VERSION_CODE > KERNEL_VERSION(3,0,0)) */
 	{
-		vm_unmap_ram(pvPtr, 1);
+		vunmap(pvPtr);
 	}
 }
 
@@ -393,6 +390,19 @@ void OSMemCopy(void *pvDst, const void *pvSrc, IMG_SIZE_T ui32Size)
 	memcpy(pvDst, pvSrc, ui32Size);
 }
 
+void OSMemCopyMTK(void *pvDst, const void *pvSrc, IMG_SIZE_T ui32Size)
+{
+#if defined(CONFIG_ARM64) || defined(__arm64__) || defined(__aarch64__)
+	volatile IMG_UINT8 * pbDst = pvDst;
+	volatile const IMG_UINT8 * pbSrc = pvSrc;
+	for (; ui32Size > 0; --ui32Size)
+	{
+		*pbDst++ = *pbSrc++;
+	}
+#else
+	memcpy(pvDst, pvSrc, ui32Size);
+#endif
+}
 
 /*************************************************************************/ /*!
 @Function       OSMemSet
@@ -773,7 +783,7 @@ PVRSRV_ERROR OSInstallDeviceLISR(PVRSRV_DEVICE_CONFIG *psDevConfig,
 					hLISRData);
 #else
 	LISR_DATA *psLISRData;
-	unsigned long flags = 0;
+	unsigned long flags = IRQF_TRIGGER_LOW;
 
 	psLISRData = kmalloc(sizeof(LISR_DATA), GFP_KERNEL);
 

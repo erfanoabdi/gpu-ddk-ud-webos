@@ -176,6 +176,16 @@ PVRSRV_ERROR OSSecureImport(IMG_SECURE_TYPE hSecure, IMG_PVOID *ppvData)
 		goto err_out;
 	}
 
+#ifdef MTK_debug_FILE_PRIV
+	if (secure_file->private_data == NULL ||
+	    ((PVRSRV_FILE_PRIVATE_DATA *)secure_file->private_data)->magic != (uintptr_t)secure_file->private_data)
+	{
+	    PVR_DPF((PVR_DBG_ERROR, "fd: %d, secure_file %p invalid", hSecure, secure_file));
+	    eError = PVRSRV_ERROR_INVALID_PARAMS;
+	    goto err_fput;
+	}
+#endif
+
 #if defined(SUPPORT_DRM)
 	psSecureConnection = LinuxConnectionFromFile(PVR_DRM_FILE_FROM_FILE(secure_file));
 #else

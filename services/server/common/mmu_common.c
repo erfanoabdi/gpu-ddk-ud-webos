@@ -1162,7 +1162,7 @@ static IMG_BOOL _MMU_FreeLevel(MMU_CONTEXT *psMMUContext,
 			IMG_BOOL bNextLast;
 
 			/* If we're crossing a Px then the start index changes */
-			if (bFirst & (i == uiStartIndex))
+			if (bFirst && (i == uiStartIndex))
 			{
 				uiNextStartIndex = auiStartArray[uiThisLevel + 1];
 				bNextFirst = IMG_TRUE;
@@ -1174,7 +1174,7 @@ static IMG_BOOL _MMU_FreeLevel(MMU_CONTEXT *psMMUContext,
 			}
 
 			/* If we're crossing a Px then the end index changes */
-			if (bLast & (i == (uiEndIndex - 1)))
+			if (bLast && (i == (uiEndIndex - 1)))
 			{
 				uiNextEndIndex = auiEndArray[uiThisLevel + 1];
 				bNextLast = IMG_TRUE;
@@ -1404,7 +1404,7 @@ static PVRSRV_ERROR _MMU_AllocLevel(MMU_CONTEXT *psMMUContext,
 			}
 
 			/* If we're crossing a Px then the start index changes */
-			if (bFirst & (i == uiStartIndex))
+			if (bFirst && (i == uiStartIndex))
 			{
 				uiNextStartIndex = auiStartArray[uiThisLevel + 1];
 				bNextFirst = IMG_TRUE;
@@ -1416,7 +1416,7 @@ static PVRSRV_ERROR _MMU_AllocLevel(MMU_CONTEXT *psMMUContext,
 			}
 
 			/* If we're crossing a Px then the end index changes */
-			if (bLast & (i == (uiEndIndex - 1)))
+			if (bLast && (i == (uiEndIndex - 1)))
 			{
 				uiNextEndIndex = auiEndArray[uiThisLevel + 1];
 				bNextLast = IMG_TRUE;
@@ -1479,7 +1479,7 @@ e0:
 
 			case 3:
 					/* If we're crossing a Px then the start index changes */
-					if (bFirst & (i == uiStartIndex))
+					if (bFirst && (i == uiStartIndex))
 					{
 						uiNextStartIndex = auiStartArray[uiThisLevel + 1];
 						bNextFirst = IMG_TRUE;
@@ -1491,7 +1491,7 @@ e0:
 					}
 
 					/* If we're crossing a Px then the end index changes */
-					if (bLast & (i == (uiEndIndex - 1)))
+					if (bLast && (i == (uiEndIndex - 1)))
 					{
 						uiNextEndIndex = auiEndArray[uiThisLevel + 1];
 						bNextLast = IMG_TRUE;

@@ -48,6 +48,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pvr_gputrace.h"
 
+/* MTK */
+#if defined(CONFIG_TRACING) && defined(CONFIG_MTK_SCHED_TRACERS) && defined(MTK_GPU_DVFS)
+#include <mach/mt_gpufreq.h>
+#include <trace/events/mtk_events.h>
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/gpu.h>
@@ -339,6 +344,14 @@ void PVRGpuTraceClientWork(
 	{
 		eError = GetCtxAndJobID(ui32Pid, ui32ExtJobRef, ui32IntJobRef, &ui32CtxId,  &psJob);
 		PVR_LOGRN_IF_ERROR(eError, "GetCtxAndJobID");
+        
+#if defined(CONFIG_TRACING) && defined(CONFIG_MTK_SCHED_TRACERS) && defined(MTK_GPU_DVFS)
+		{
+			unsigned int ui32CurFreqID = mt_gpufreq_get_cur_freq_index();
+			unsigned int ui32GPUFreq = mt_gpufreq_get_frequency_by_level(ui32CurFreqID);
+			trace_gpu_freq(ui32GPUFreq);
+		}
+#endif
 
 		trace_gpu_job_enqueue(ui32CtxId, PVRSRV_FTRACE_JOB_GET_ID(psJob), pszKickType);
 

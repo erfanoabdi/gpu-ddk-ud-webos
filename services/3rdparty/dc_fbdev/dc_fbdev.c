@@ -65,8 +65,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define FALLBACK_REFRESH_RATE		60
 #define FALLBACK_DPI		        160
 
-struct fb_var_screeninfo sDefaultVar;  //chenli: store default fb_var_screeninfo
-
 typedef struct
 {
 	IMG_HANDLE			hSrvHandle;
@@ -179,6 +177,10 @@ PVRSRV_ERROR DC_FBDEV_PanelQuery(IMG_HANDLE hDeviceData,
 	else
 		psPanelInfo[0].ui32RefreshRate = FALLBACK_REFRESH_RATE;
 #endif
+
+	/* MTK: fixme */
+	if (psPanelInfo[0].ui32RefreshRate == 0)
+		psPanelInfo[0].ui32RefreshRate = FALLBACK_REFRESH_RATE;
 
 	psPanelInfo[0].ui32XDpi =
 		((int)sVar.width > 0) ? (254000 / sVar.width * psVar->xres / 10000) : FALLBACK_DPI;
@@ -325,20 +327,6 @@ err_out:
 	return eError;
 }
 
-static int DumpFbInfo( struct fb_var_screeninfo *info)
-{
-#if 0
-    printk("dump: vir[%d,%d] [%d,%d,%d,%d] format=%d \n",
-                    info->xres_virtual,info->yres_virtual,
-                    info->xoffset,
-                    info->yoffset,
-                    info->xres,
-                    info->yres,
-                    (info->nonstd & 0xff));
-#endif
-    return 0;
-}
-
 static
 void DC_FBDEV_ContextConfigure(IMG_HANDLE hDisplayContext,
 								   IMG_UINT32 ui32PipeCount,
@@ -351,7 +339,6 @@ void DC_FBDEV_ContextConfigure(IMG_HANDLE hDisplayContext,
 	DC_FBDEV_DEVICE *psDeviceData = psDeviceContext->psDeviceData;
 	struct fb_var_screeninfo sVar = psDeviceData->psLINFBInfo->var;
 	int err;
-    IMG_BOOL bReset=false;
 
 	PVR_UNREFERENCED_PARAMETER(ui32PipeCount);
 	PVR_UNREFERENCED_PARAMETER(pasSurfAttrib);
@@ -361,14 +348,6 @@ void DC_FBDEV_ContextConfigure(IMG_HANDLE hDisplayContext,
 		DCDisplayConfigurationRetired(psDeviceContext->hLastConfigData);
 
 	sVar.yoffset = 0;
-
-	//chenli: if current FB's format is not RGBX_8888, reset fb_var_screeninfo
-	if((sVar.nonstd & 0xff) != (sDefaultVar.nonstd & 0xff))
-	{
-	    DumpFbInfo(&sDefaultVar);
-        sVar = sDefaultVar;
-        bReset = true;
-	}
 
 	if(ui32PipeCount == 0)
 	{
@@ -398,7 +377,18 @@ void DC_FBDEV_ContextConfigure(IMG_HANDLE hDisplayContext,
 		psDeviceContext->hLastConfigData = hConfigData;
 	}
 
-	if(lock_fb_info(psDeviceData->psLINFBInfo) || bReset)
+	/* MTK: set BGRA */
+	sVar.bits_per_pixel = 32;
+	sVar.transp.offset  = 24;
+	sVar.transp.length  = 8;
+	sVar.red.offset     = 16;
+	sVar.red.length     = 8;
+	sVar.green.offset   = 8;
+	sVar.green.length   = 8;
+	sVar.blue.offset    = 0;
+	sVar.blue.length    = 8;
+
+	if(lock_fb_info(psDeviceData->psLINFBInfo))
 	{
 		console_lock();
 
@@ -408,20 +398,11 @@ void DC_FBDEV_ContextConfigure(IMG_HANDLE hDisplayContext,
 		 * drivers that seem to lose any modifications to yres_virtual
 		 * after a blank.)
 		 */
-		if((psDeviceData->bCanFlip &&
-		   sVar.yres_virtual < sVar.yres * NUM_PREFERRED_BUFFERS) || bReset)
+		if(psDeviceData->bCanFlip &&
+		   sVar.yres_virtual < sVar.yres * NUM_PREFERRED_BUFFERS)
 		{
 			sVar.activate = FB_ACTIVATE_NOW;
 			sVar.yres_virtual = sVar.yres * NUM_PREFERRED_BUFFERS;
-
-#if 0
-            //chenli: if the virtual screen resolution not changed, res_virtual should not be changed
-            if(bReset == false)
-            {
-                sVar.xres_virtual = sVar.xres;
-                sVar.yres_virtual = sVar.yoffset + sVar.yres;
-            }
-#endif
 
 			err = fb_set_var(psDeviceData->psLINFBInfo, &sVar);
 			if(err)
@@ -514,10 +495,13 @@ PVRSRV_ERROR DC_FBDEV_BufferAlloc(IMG_HANDLE hDisplayContext,
 		eError = PVRSRV_ERROR_OUT_OF_MEMORY;
 		goto err_out;
 	}
+    
+//MTK: align 32
+#define MTK_ALIGN(x,a)	(((x) + (a) - 1L) & ~((a) - 1L))
 
 	psBuffer->psDeviceContext = psDeviceContext;
 	psBuffer->ui32ByteStride =
-		psSurfInfo->sDims.ui32Width * psCreateInfo->ui32BPP;
+		MTK_ALIGN(psSurfInfo->sDims.ui32Width, 32) * psCreateInfo->ui32BPP;
 
 	psBuffer->ui32Width = psSurfInfo->sDims.ui32Width;
 	psBuffer->ui32Height = psSurfInfo->sDims.ui32Height;
@@ -631,19 +615,10 @@ static bool DC_FBDEV_FlipPossible(struct fb_info *psLINFBInfo)
 		return true;
 
 	pr_err("No buffer space for flipping; asking for more.\n");
-    pr_err("sVar.yres=%d,sVar.yres_virtual=%d",sVar.yres,sVar.yres_virtual);
-
-    //zxl:if open it,will lead to penguin Logo show error
-#if 0
-    if((sVar.nonstd & 0xff) != (sDefaultVar.nonstd & 0xff))
-    {
-        DumpFbInfo(&sDefaultVar);
-        sVar = sDefaultVar;
-    }
-#endif
 
 	sVar.activate = FB_ACTIVATE_NOW;
 	sVar.yres_virtual = sVar.yres * NUM_PREFERRED_BUFFERS;
+
 	err = fb_set_var(psLINFBInfo, &sVar);
 	if(err)
 	{
@@ -729,32 +704,14 @@ static int __init DC_FBDEV_init(void)
 		goto err_unlock;
 	}
 
-#if 1
-    /*chenli: If FB uses RGB888 format after boot logo,
-    the value we need should be caculated with the RGB888 format
-    */
-    if(psLINFBInfo->var.bits_per_pixel ==16)
-    {
-       psLINFBInfo->var.bits_per_pixel = 32;
-       psLINFBInfo->var.red.length = 8;
-       psLINFBInfo->var.green.length = 8;
-       psLINFBInfo->var.blue.length = 8 ;
-       psLINFBInfo->var.red.offset = 16;
-       psLINFBInfo->var.green.offset = 8;
-       psLINFBInfo->var.blue.offset = 0;
-       psLINFBInfo->var.red.msb_right = 0;
-       psLINFBInfo->fix.line_length *= 2;
-    }
-#endif
-
 	if(psLINFBInfo->var.bits_per_pixel == 32)
 	{
 		if(psLINFBInfo->var.red.length   != 8  ||
 		   psLINFBInfo->var.green.length != 8  ||
-		   psLINFBInfo->var.blue.length  != 8  ||
-		   psLINFBInfo->var.red.offset   != 16 ||
-		   psLINFBInfo->var.green.offset != 8  ||
-		   psLINFBInfo->var.blue.offset  != 0)
+           psLINFBInfo->var.blue.length  != 8  /*||
+            psLINFBInfo->var.red.offset   != 16 ||
+            psLINFBInfo->var.green.offset != 8  ||
+            psLINFBInfo->var.blue.offset  != 0 */) // MTK: supports RGBA
 		{
 			pr_err("The fbdev device detected uses an unrecognized "
 				   "32bit pixel format (%u/%u/%u, %u/%u/%u)\n",
@@ -766,11 +723,22 @@ static int __init DC_FBDEV_init(void)
 				   psLINFBInfo->var.blue.offset);
 			goto err_unlock;
 		}
+
+		 // MTK: supports RGBA
+		if(psLINFBInfo->var.red.offset   == 0 ||
+		   psLINFBInfo->var.green.offset == 8 ||
+		   psLINFBInfo->var.blue.offset  == 16 )
+		{
+			ePixFormat = IMG_PIXFMT_R8G8B8A8_UNORM;
+		}
+		else
+		{
 #if defined(DC_FBDEV_FORCE_XRGB8888)
-		ePixFormat = IMG_PIXFMT_B8G8R8X8_UNORM;
+			ePixFormat = IMG_PIXFMT_B8G8R8X8_UNORM;
 #else
-		ePixFormat = IMG_PIXFMT_B8G8R8A8_UNORM;
+			ePixFormat = IMG_PIXFMT_B8G8R8A8_UNORM;
 #endif
+		}
 	}
 	else if(psLINFBInfo->var.bits_per_pixel == 16)
 	{
@@ -799,20 +767,6 @@ static int __init DC_FBDEV_init(void)
 			   "bpp (%u).\n", psLINFBInfo->var.bits_per_pixel);
 		goto err_unlock;
 	}
-#if 1
-    //save defalut fb info
-    sDefaultVar = psLINFBInfo->var;
-    sDefaultVar.reserved[0] = 0;
-    sDefaultVar.reserved[1] = 0;
-    sDefaultVar.reserved[2] = 0;
-    sDefaultVar.yres_virtual   = sDefaultVar.yres * 3;
-    sDefaultVar.nonstd      &= 0xffffff00;
-    sDefaultVar.nonstd      |= 5;   //zxl:to match ePixFormat=IMG_PIXFMT_B8G8R8A8_UNORM
-    sDefaultVar.grayscale       &= 0xff;
-    sDefaultVar.grayscale       |= (sDefaultVar.xres<<8) + (sDefaultVar.yres<<20);
-	sDefaultVar.activate = FB_ACTIVATE_NOW;
-	sDefaultVar.yres_virtual = sDefaultVar.yres * NUM_PREFERRED_BUFFERS;
-#endif
 
 	if(!try_module_get(psLINFBInfo->fbops->owner))
 	{
@@ -842,7 +796,7 @@ static int __init DC_FBDEV_init(void)
 
 	gpsDeviceData->bCanFlip = DC_FBDEV_FlipPossible(psLINFBInfo);
 
-	pr_info("Found usable fbdev device (%s):\n"
+	pr_err("Found usable fbdev device (%s):\n"
 			"range (physical) = 0x%lx-0x%lx\n"
 			"size (bytes)     = 0x%x\n"
 			"xres x yres      = %ux%u\n"

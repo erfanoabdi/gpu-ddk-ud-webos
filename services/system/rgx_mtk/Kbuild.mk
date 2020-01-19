@@ -39,6 +39,11 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### ###########################################################################
 
-pvrsrvkm-y += \
-		services/system/$(PVR_SYSTEM)/sunxi_init.o \
-		services/system/$(PVR_SYSTEM)/sysconfig.o
+pvrsrvkm-y += services/system/$(PVR_SYSTEM)/sysconfig.o
+pvrsrvkm-y += services/system/$(PVR_SYSTEM)/mtk_mfgsys.o
+pvrsrvkm-y += services/system/$(PVR_SYSTEM)/mtk_mfgdvfs.o
+pvrsrvkm-y += services/system/$(PVR_SYSTEM)/mtk_pp.o
+
+ifeq ($(SUPPORT_ION),1)
+pvrsrvkm-y += services/system/common/env/linux/ion_support.o
+endif

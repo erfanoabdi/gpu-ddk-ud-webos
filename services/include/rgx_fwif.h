@@ -234,7 +234,7 @@ typedef struct _RGXFWIF_TRACEBUF_
  ******************************************************************************
  * GPU Utilization FW CB
  *****************************************************************************/
-#define RGXFWIF_GPU_STATS_WINDOW_SIZE_US			500000			/*!< Time window considered for active/idle/blocked statistics */
+#define RGXFWIF_GPU_STATS_WINDOW_SIZE_US			50000			/*!< Time window considered for active/idle/blocked statistics */
 #define RGXFWIF_GPU_STATS_STATE_CHG_PER_SEC			1000			/*!< Expected number of maximum GPU state changes per second */
 #define RGXFWIF_GPU_STATS_MAX_VALUE_OF_STATE		10000
 

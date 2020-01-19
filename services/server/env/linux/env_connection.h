@@ -103,7 +103,10 @@ static inline void EnvDataIonClientRelease(ENV_ION_CONNECTION_DATA *psIonData)
 	PVR_ASSERT(psIonData->ui32IonClientRefCount > 0);
 	if (--psIonData->ui32IonClientRefCount == 0)
 	{
+		/* MTK: we are using global ion client, never destroy */
+#if 0
 		ion_client_destroy(psIonData->psIonClient);
+#endif
 		IonDevRelease(psIonData->psIonDev);
 		OSFreeMem(psIonData);
 		psIonData = IMG_NULL;

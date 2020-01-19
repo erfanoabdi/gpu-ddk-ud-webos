@@ -48,11 +48,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define __SYSCCONFIG_H__
 
 
-#define RGX_SUNXI_CORE_CLOCK_SPEED GetConfigFreq()
-#define RGX_SUNXI_SYSTEM_NAME "RGX SUNXI"
-#define SYS_RGX_ACTIVE_POWER_LATENCY_MS (100)
+#define RGX_HW_CORE_CLOCK_SPEED 395000000
+#define RGX_HW_SYSTEM_NAME "RGX HW"
 
-/* default BIF tiling heap x-stride configurations. */
+#define SYS_RGX_ACTIVE_POWER_LATENCY_MS (15)
+
+
+
 static IMG_UINT32 gauiBIFTilingHeapXStrides[RGXFWIF_NUM_BIF_TILING_CONFIGS] =
 {
 	0, /* BIF tiling heap 1 x-stride */
@@ -60,6 +62,15 @@ static IMG_UINT32 gauiBIFTilingHeapXStrides[RGXFWIF_NUM_BIF_TILING_CONFIGS] =
 	2, /* BIF tiling heap 3 x-stride */
 	3  /* BIF tiling heap 4 x-stride */
 };
+
+
+#define SYS_MTK_RGX_REGS_SYS_PHYS_BASE  0x13000000 //? DeviceConfig
+
+#define SYS_MTK_RGX_REGS_SIZE           0xFFFF //?
+
+#define SYS_MTK_RGX_IRQ				 220 //?
+
+
 
 /*****************************************************************************
  * system specific data structures

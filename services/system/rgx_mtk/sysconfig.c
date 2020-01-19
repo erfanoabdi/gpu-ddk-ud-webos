@@ -48,19 +48,19 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #if defined(SUPPORT_ION)
 #include "ion_support.h"
 #endif
-#include "rk_init.h"
+#include "mtk_mfgsys.h"
+
+
+#define RGX_CR_ISP_GRIDOFFSET                             (0x0FA0U)
+
 
 static RGX_TIMING_INFORMATION	gsRGXTimingInfo;
-static RGX_DATA			gsRGXData;
+static RGX_DATA					gsRGXData;
 static PVRSRV_DEVICE_CONFIG 	gsDevices[1];
 static PVRSRV_SYSTEM_CONFIG 	gsSysConfig;
 
 static PHYS_HEAP_FUNCTIONS	gsPhysHeapFuncs;
-#if defined(TDMETACODE)
-static PHYS_HEAP_CONFIG		gsPhysHeapConfig[3];
-#else
-static PHYS_HEAP_CONFIG		gsPhysHeapConfig[1];
-#endif
+static PHYS_HEAP_CONFIG		gsPhysHeapConfig;
 
 /*
 	CPU to Device physcial address translation
@@ -88,65 +88,60 @@ IMG_VOID UMAPhysHeapDevPAddrToCpuPAddr(IMG_HANDLE hPrivData,
 	psCpuPAddr->uiAddr = psDevPAddr->uiAddr;
 }
 
+
 /*
 	SysCreateConfigData
 */
 PVRSRV_ERROR SysCreateConfigData(PVRSRV_SYSTEM_CONFIG **ppsSysConfig)
 {
-	/* Rk Init */
-	RgxRkInit();
-
 	/*
-	 * Setup information about physical memory heap(s) we have
+	 * Setup information about physaical memory heap(s) we have
 	 */
 	gsPhysHeapFuncs.pfnCpuPAddrToDevPAddr = UMAPhysHeapCpuPAddrToDevPAddr;
 	gsPhysHeapFuncs.pfnDevPAddrToCpuPAddr = UMAPhysHeapDevPAddrToCpuPAddr;
 
-	gsPhysHeapConfig[0].ui32PhysHeapID = 0;
-	gsPhysHeapConfig[0].pszPDumpMemspaceName = "SYSMEM";
-	gsPhysHeapConfig[0].eType = PHYS_HEAP_TYPE_UMA;
-	gsPhysHeapConfig[0].psMemFuncs = &gsPhysHeapFuncs;
-	gsPhysHeapConfig[0].hPrivData = IMG_NULL;
+	gsPhysHeapConfig.ui32PhysHeapID = 0;
+	gsPhysHeapConfig.pszPDumpMemspaceName = "SYSMEM";
+	gsPhysHeapConfig.eType = PHYS_HEAP_TYPE_UMA;
+	gsPhysHeapConfig.psMemFuncs = &gsPhysHeapFuncs;
+	gsPhysHeapConfig.hPrivData = (IMG_HANDLE)&gsSysConfig;
+	#if 1
+	gsPhysHeapConfig.sStartAddr.uiAddr= 0;
+	gsPhysHeapConfig.uiSize = 0;
+	#endif
 
-#if defined(TDMETACODE)
-	gsPhysHeapConfig[1].ui32PhysHeapID = 1;
-	gsPhysHeapConfig[1].pszPDumpMemspaceName = "TDMETACODEMEM";
-	gsPhysHeapConfig[1].eType = PHYS_HEAP_TYPE_UMA;
-	gsPhysHeapConfig[1].psMemFuncs = &gsPhysHeapFuncs;
-	gsPhysHeapConfig[1].hPrivData = IMG_NULL;
-
-	gsPhysHeapConfig[2].ui32PhysHeapID = 2;
-	gsPhysHeapConfig[2].pszPDumpMemspaceName = "TDSECUREBUFMEM";
-	gsPhysHeapConfig[2].eType = PHYS_HEAP_TYPE_UMA;
-	gsPhysHeapConfig[2].psMemFuncs = &gsPhysHeapFuncs;
-	gsPhysHeapConfig[2].hPrivData = IMG_NULL;
-#endif
-
-	gsSysConfig.pasPhysHeaps = &(gsPhysHeapConfig[0]);
-	gsSysConfig.ui32PhysHeapCount = IMG_ARR_NUM_ELEMS(gsPhysHeapConfig);
-
+	gsSysConfig.pasPhysHeaps = &gsPhysHeapConfig;
+	gsSysConfig.ui32PhysHeapCount = sizeof(gsPhysHeapConfig) / sizeof(PHYS_HEAP_CONFIG);
+/*
+add for new DDK 1.1.2550513
+*/
 	gsSysConfig.pui32BIFTilingHeapConfigs = gauiBIFTilingHeapXStrides;
 	gsSysConfig.ui32BIFTilingHeapCount = IMG_ARR_NUM_ELEMS(gauiBIFTilingHeapXStrides);
 
 	/*
 	 * Setup RGX specific timing data
 	 */
-	gsRGXTimingInfo.ui32CoreClockSpeed        = RGX_RK_CORE_CLOCK_SPEED;
+	gsRGXTimingInfo.ui32CoreClockSpeed        = RGX_HW_CORE_CLOCK_SPEED;
+	
+	#if MTK_PM_SUPPORT
 	gsRGXTimingInfo.bEnableActivePM           = IMG_TRUE;
-	gsRGXTimingInfo.bEnableRDPowIsland        = IMG_FALSE;
-	gsRGXTimingInfo.ui32ActivePMLatencyms     = SYS_RGX_ACTIVE_POWER_LATENCY_MS;
-
+	gsRGXTimingInfo.ui32ActivePMLatencyms       = SYS_RGX_ACTIVE_POWER_LATENCY_MS;
+	#else
+	gsRGXTimingInfo.bEnableActivePM           = IMG_FALSE;
+	#endif
+	
+ 	if(MTKMFGIsE2andAboveVersion())
+	{
+		gsRGXTimingInfo.bEnableRDPowIsland        = IMG_TRUE;
+	}
+	else
+	{
+		gsRGXTimingInfo.bEnableRDPowIsland        = IMG_FALSE;
+	}
 	/*
 	 *Setup RGX specific data
 	 */
 	gsRGXData.psRGXTimingInfo = &gsRGXTimingInfo;
-#if defined(TDMETACODE)
-	gsRGXData.bHasTDMetaCodePhysHeap = IMG_TRUE;
-	gsRGXData.uiTDMetaCodePhysHeapID = 1;
-
-	gsRGXData.bHasTDSecureBufPhysHeap = IMG_TRUE;
-	gsRGXData.uiTDSecureBufPhysHeapID = 2;
-#endif
 
 	/*
 	 * Setup RGX device
@@ -155,41 +150,63 @@ PVRSRV_ERROR SysCreateConfigData(PVRSRV_SYSTEM_CONFIG **ppsSysConfig)
 	gsDevices[0].pszName                = "RGX";
 
 	/* Device setup information */
-	gsDevices[0].sRegsCpuPBase.uiAddr   = RK_GPU_PBASE;
-	gsDevices[0].ui32RegsSize           = RK_GPU_SIZE;
-	gsDevices[0].ui32IRQ                = RK_IRQ_GPU;
+	gsDevices[0].sRegsCpuPBase.uiAddr   = SYS_MTK_RGX_REGS_SYS_PHYS_BASE;// SYS_MTK_RGX_REGS_SYS_PHYS_BASE
+	gsDevices[0].ui32RegsSize           = SYS_MTK_RGX_REGS_SIZE; //SYS_MTK_RGX_REGS_SIZE
+	gsDevices[0].ui32IRQ                = SYS_MTK_RGX_IRQ; // SYS_MTK_RGX_IRQ
+	gsDevices[0].bIRQIsShared           = IMG_FALSE;
 
-	/* Device's physical heap IDs */
-	gsDevices[0].aui32PhysHeapID[PVRSRV_DEVICE_PHYS_HEAP_GPU_LOCAL] = 0;
-	gsDevices[0].aui32PhysHeapID[PVRSRV_DEVICE_PHYS_HEAP_CPU_LOCAL] = 0;
+	/*  power management on  HW system */
+	#if MTK_PM_SUPPORT
+	gsDevices[0].pfnPrePowerState       =MTKSysDevPrePowerState;
+	gsDevices[0].pfnPostPowerState      =MTKSysDevPostPowerState;
+	#else
+	gsDevices[0].pfnPrePowerState       =IMG_NULL;
+	gsDevices[0].pfnPostPowerState      =IMG_NULL;
+	#endif
 
-	/* No power management on RK system */
-	gsDevices[0].pfnPrePowerState       = RkPrePowerState;
-	gsDevices[0].pfnPostPowerState      = RkPostPowerState;
-
-	/* No clock frequency either */
+	/*  clock frequency  */
 	gsDevices[0].pfnClockFreqGet        = IMG_NULL;
 
-	/* No interrupt handled either */
+	/*  interrupt handled  */
 	gsDevices[0].pfnInterruptHandled    = IMG_NULL;
 
-	gsDevices[0].pfnCheckMemAllocSize   = SysCheckMemAllocSize;
-
 	gsDevices[0].hDevData               = &gsRGXData;
+
+	#if 0
+	gsDevices[0].bBPSet = IMG_FALSE;
+	gsDevices[0].eBPDM = RGXFWIF_DM_TA; //need to check
+	gsDevices[0].hSysData = NULL;
+	gsDevices[0].ui32PhysHeapID = 0;
+	gsDevices[0].uiFlags = 0; // currently unused
+	#endif
+
+	
+
+	
 
 	/*
 	 * Setup system config
 	 */
-	gsSysConfig.pszSystemName = RGX_RK_SYSTEM_NAME;
+	gsSysConfig.pszSystemName = RGX_HW_SYSTEM_NAME;
 	gsSysConfig.uiDeviceCount = sizeof(gsDevices)/sizeof(gsDevices[0]);
 	gsSysConfig.pasDevices = &gsDevices[0];
 
-	/* No power management on no HW system */
+	/*  power management on  HW system */
+	#if MTK_PM_SUPPORT
+	gsSysConfig.pfnSysPrePowerState = MTKSystemPrePowerState;
+	gsSysConfig.pfnSysPostPowerState = MTKSystemPostPowerState;
+	#else
 	gsSysConfig.pfnSysPrePowerState = IMG_NULL;
-	gsSysConfig.pfnSysPostPowerState = IMG_NULL;
+	gsSysConfig.pfnSysPostPowerState =IMG_NULL;
+	#endif
 
-	/* no cache snooping */
-	gsSysConfig.eCacheSnoopingMode = PVRSRV_SYSTEM_SNOOP_NONE;
+	/*  cache snooping */
+	//gsSysConfig.bHasCacheSnooping = IMG_FALSE; // new DDK has new variable
+    gsSysConfig.eCacheSnoopingMode = 0;
+
+	#if 1 //chenzhu add 
+	gsSysConfig.uiSysFlags = 0;
+	#endif
 
 	/* Setup other system specific stuff */
 #if defined(SUPPORT_ION)
@@ -198,8 +215,32 @@ PVRSRV_ERROR SysCreateConfigData(PVRSRV_SYSTEM_CONFIG **ppsSysConfig)
 
 	*ppsSysConfig = &gsSysConfig;
 
+#if 0
+	PVR_TRACE(("SysCreateConfigData: start to OSMapPhysToLin "));
+	
+	IMG_VOID *pvRegsBaseKM = OSMapPhysToLin(gsDevices[0].sRegsCpuPBase, gsDevices[0].ui32RegsSize , 0);
+	IMG_UINT32 ui32Value;
+		
+    PVR_TRACE(("PVRCore_Init:pvRegsBaseKM = %p ",pvRegsBaseKM));
+		
+
+	ui32Value = OSReadHWReg32(pvRegsBaseKM, 0x20);
+	PVR_TRACE(("PVRCore_Init:ui32Value = 0x%X ",ui32Value));
+	ui32Value = OSReadHWReg32(pvRegsBaseKM, 0x28);
+	PVR_TRACE(("PVRCore_Init:ui32Value = 0x%X ",ui32Value));
+
+	OSWriteHWReg32(pvRegsBaseKM, RGX_CR_ISP_GRIDOFFSET, 0x55555555);
+	ui32Value = OSReadHWReg32(pvRegsBaseKM, RGX_CR_ISP_GRIDOFFSET);
+	PVR_TRACE(("PVRCore_Init:ui32Value = 0x%X ",ui32Value));
+
+	OSWriteHWReg32(pvRegsBaseKM, RGX_CR_ISP_GRIDOFFSET, 0xAAAAAAAA);
+	ui32Value = OSReadHWReg32(pvRegsBaseKM, RGX_CR_ISP_GRIDOFFSET);
+	PVR_TRACE(("PVRCore_Init:ui32Value = 0x%X ",ui32Value));
+#endif		
+
 	return PVRSRV_OK;
 }
+
 
 /*
 	SysDestroyConfigData
@@ -208,26 +249,9 @@ IMG_VOID SysDestroyConfigData(PVRSRV_SYSTEM_CONFIG *psSysConfig)
 {
 	PVR_UNREFERENCED_PARAMETER(psSysConfig);
 
-	/* Rk UnInit */
-	RgxRkUnInit();
-
 #if defined(SUPPORT_ION)
 	IonDeinit();
 #endif
-}
-
-PVRSRV_ERROR SysAcquireSystemData(IMG_HANDLE hSysData)
-{
-	PVR_UNREFERENCED_PARAMETER(hSysData);
-
-	return PVRSRV_ERROR_NOT_SUPPORTED;
-}
-
-PVRSRV_ERROR SysReleaseSystemData(IMG_HANDLE hSysData)
-{
-	PVR_UNREFERENCED_PARAMETER(hSysData);
-
-	return PVRSRV_ERROR_NOT_SUPPORTED;
 }
 
 PVRSRV_ERROR SysDebugInfo(PVRSRV_SYSTEM_CONFIG *psSysConfig, DUMPDEBUG_PRINTF_FUNC *pfnDumpDebugPrintf)
@@ -236,7 +260,6 @@ PVRSRV_ERROR SysDebugInfo(PVRSRV_SYSTEM_CONFIG *psSysConfig, DUMPDEBUG_PRINTF_FU
 	PVR_UNREFERENCED_PARAMETER(pfnDumpDebugPrintf);
 	return PVRSRV_OK;
 }
-
 /******************************************************************************
  End of file (sysconfig.c)
 ******************************************************************************/

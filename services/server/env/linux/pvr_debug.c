@@ -65,6 +65,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "lists.h"
 #include "osfunc.h"
 
+/* MTK */
+#include "mtk_version.h"
+
 #if defined(PVRSRV_NEED_PVR_DPF)
 
 /******** BUFFERED LOG MESSAGES ********/
@@ -572,6 +575,8 @@ static int _DebugVersionSeqShow(struct seq_file *psSeqFile, void *pvData)
 			   PVR_BUILD_TYPE, PVR_BUILD_DIR);
 
 		seq_printf(psSeqFile, "System Version String: %s\n", pszSystemVersionString);
+
+		seq_printf(psSeqFile, "MTK Version String: %s\n", MTK_DEBUG_VERSION_STR);
 	}
 	else if (pvData != NULL)
 	{
@@ -601,87 +606,6 @@ static struct seq_operations gsDebugVersionReadOps =
 	.show = _DebugVersionSeqShow,
 };
 
-#if 0
-static void *_DebugFreqSeqStart(struct seq_file *psSeqFile,
-				   loff_t *puiPosition)
-{
-	PVRSRV_DATA *psPVRSRVData = (PVRSRV_DATA *)psSeqFile->private;
-	loff_t uiCurrentPosition = 1;
-
-	if (*puiPosition == 0)
-	{
-		return SEQ_START_TOKEN;
-	}
-
-	return List_PVRSRV_DEVICE_NODE_Any_va(psPVRSRVData->psDeviceNodeList,
-					      _DebugVersionCompare_AnyVaCb,
-					      &uiCurrentPosition,
-					      *puiPosition);
-}
-
-static void _DebugFreqSeqStop(struct seq_file *psSeqFile, void *pvData)
-{
-	PVR_UNREFERENCED_PARAMETER(psSeqFile);
-	PVR_UNREFERENCED_PARAMETER(pvData);
-}
-
-static void *_DebugFreqSeqNext(struct seq_file *psSeqFile,
-				  void *pvData,
-				  loff_t *puiPosition)
-{
-	PVRSRV_DATA *psPVRSRVData = (PVRSRV_DATA *)psSeqFile->private;
-	loff_t uiCurrentPosition = 1;
-
-	PVR_UNREFERENCED_PARAMETER(pvData);
-
-	(*puiPosition)++;
-
-	return List_PVRSRV_DEVICE_NODE_Any_va(psPVRSRVData->psDeviceNodeList,
-					      _DebugVersionCompare_AnyVaCb,
-					      &uiCurrentPosition,
-					      *puiPosition);
-}
-
-static int _DebugFreqSeqShow(struct seq_file *psSeqFile, void *pvData)
-{
-	if (pvData == SEQ_START_TOKEN)
-	{
-		const IMG_CHAR *pszSystemVersionString = PVRSRVGetSystemName();
-
-		seq_printf(psSeqFile, "Freq %s (%s) %s\n",
-			   PVRVERSION_STRING,
-			   PVR_BUILD_TYPE, PVR_BUILD_DIR);
-
-		seq_printf(psSeqFile, "Freq: %s\n", pszSystemVersionString);
-	}
-	else if (pvData != NULL)
-	{
-		PVRSRV_DEVICE_NODE *psDevNode = (PVRSRV_DEVICE_NODE *)pvData;
-
-		if (psDevNode->pfnDeviceVersionString)
-		{
-			IMG_CHAR *pszDeviceVersionString;
-			
-			if (psDevNode->pfnDeviceVersionString(psDevNode, &pszDeviceVersionString) == PVRSRV_OK)
-			{
-				seq_printf(psSeqFile, "%s\n", pszDeviceVersionString);
-				
-				kfree(pszDeviceVersionString);
-			}
-		}
-	}
-
-	return 0;
-}
-
-static struct seq_operations gsDebugFreqReadOps =
-{
-	.start = _DebugFreqSeqStart,
-	.stop = _DebugFreqSeqStop,
-	.next = _DebugFreqSeqNext,
-	.show = _DebugFreqSeqShow,
-};
-#endif
 
 /*************************************************************************/ /*!
  Nodes DebugFS entry

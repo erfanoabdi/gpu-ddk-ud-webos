@@ -451,7 +451,7 @@ int
 PVRSRV_BridgeDispatchKM(struct drm_device *dev, void *arg, struct drm_file *pFile)
 #else
 long
-PVRSRV_BridgeDispatchKM(struct file *pFile, unsigned int unref__ ioctlCmd, unsigned long arg)
+PVRSRV_BridgeDispatchKM(struct file *pFile, unsigned int ioctlCmd, unsigned long arg)
 #endif
 {
 #if !defined(SUPPORT_DRM)
@@ -478,7 +478,6 @@ PVRSRV_BridgeDispatchKM(struct file *pFile, unsigned int unref__ ioctlCmd, unsig
 	psBridgePackageKM = (PVRSRV_BRIDGE_PACKAGE *)arg;
 	PVR_ASSERT(psBridgePackageKM != IMG_NULL);
 #else
-	PVR_UNREFERENCED_PARAMETER(ioctlCmd);
 
 	psBridgePackageKM = &sBridgePackageKM;
 
@@ -499,6 +498,15 @@ PVRSRV_BridgeDispatchKM(struct file *pFile, unsigned int unref__ ioctlCmd, unsig
 					  sizeof(PVRSRV_BRIDGE_PACKAGE))
 	  != PVRSRV_OK)
 	{
+		goto unlock_and_return;
+	}
+
+	if (ioctlCmd != psBridgePackageKM->ui32BridgeID ||
+	    psBridgePackageKM->ui32Size != sizeof(PVRSRV_BRIDGE_PACKAGE))
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Inconsistent data passed from user space",
+				__FUNCTION__));
+		err = PVRSRV_ERROR_INVALID_PARAMS;
 		goto unlock_and_return;
 	}
 #endif
@@ -533,7 +541,7 @@ int
 long
 #endif
 PVRSRV_BridgeCompatDispatchKM(struct file *pFile,
-			      unsigned int unref__ ioctlCmd,
+			      unsigned int ioctlCmd,
 			      unsigned long arg)
 {
 	struct bridge_package_from_32
@@ -588,9 +596,16 @@ PVRSRV_BridgeCompatDispatchKM(struct file *pFile,
 		goto unlock_and_return;
 	}
 
-	PVR_ASSERT(params_addr->size == sizeof(struct bridge_package_from_32));
-
 	params_addr->bridge_id = PVRSRV_GET_BRIDGE_ID(params_addr->bridge_id);
+
+	if (PVRSRV_GET_BRIDGE_ID(ioctlCmd) != params_addr->bridge_id ||
+	    params_addr->size != sizeof(struct bridge_package_from_32))
+	{
+		PVR_DPF((PVR_DBG_ERROR, "%s: Inconsistent data passed from user space",
+				__FUNCTION__));
+		err = PVRSRV_ERROR_INVALID_PARAMS;
+		goto unlock_and_return;
+	}
 
 #if defined(DEBUG_BRIDGE_KM)
 	PVR_DPF((PVR_DBG_MESSAGE, "ioctl %s -> func %s",

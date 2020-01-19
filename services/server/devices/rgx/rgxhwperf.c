@@ -1030,7 +1030,9 @@ PVRSRV_ERROR PVRGpuTraceEnabledSet(IMG_BOOL bNewValue)
 
 IMG_BOOL RGXHWPerfFTraceGPUEventsEnabled(IMG_VOID)
 {
-	return(gpsRgxDevInfo->bFTraceGPUEventsEnabled);
+	if (gpsRgxDevInfo)
+		return(gpsRgxDevInfo->bFTraceGPUEventsEnabled);
+	return IMG_FALSE;
 }
 
 IMG_BOOL PVRGpuTraceEnabled(IMG_VOID)
