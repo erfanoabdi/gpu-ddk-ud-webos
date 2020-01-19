@@ -61,10 +61,6 @@ typedef IMG_BOOL (PVRSRV_GET_NEXT_STAT_FUNC)(void *pvStatPtr,
 typedef IMG_UINT32 (PVRSRV_INC_STAT_MEM_REFCOUNT_FUNC)(void *pvStatPtr);
 typedef IMG_UINT32 (PVRSRV_DEC_STAT_MEM_REFCOUNT_FUNC)(void *pvStatPtr);
 
-typedef struct _PVR_DEBUGFS_DIR_DATA_ PVR_DEBUGFS_DIR_DATA;
-typedef struct _PVR_DEBUGFS_ENTRY_DATA_ PVR_DEBUGFS_ENTRY_DATA;
-typedef struct _PVR_DEBUGFS_DRIVER_STAT_ PVR_DEBUGFS_DRIVER_STAT;
-
 int PVRDebugFSInit(void);
 void PVRDebugFSDeInit(void);
 
