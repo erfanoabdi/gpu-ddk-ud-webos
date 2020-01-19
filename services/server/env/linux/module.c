@@ -225,12 +225,6 @@ static struct class *psPvrClass;
  */
 static int AssignedMajorNumber;
 
-static const struct of_device_id rockchip_gpu_dt_ids[] = {
-    { .compatible = "arm,rogue-G6110", },
-	{ .compatible = "arm,rk3368-gpu", },
-	{},
-};
-
 /*
  * These are the operations that will be associated with the device node
  * we create.
@@ -315,7 +309,6 @@ static LDM_DRV powervr_driver = {
 	.driver = {
 		.name	= DRVNAME,
 		.pm	= &powervr_dev_pm_ops,
-		.of_match_table = of_match_ptr(rockchip_gpu_dt_ids),
 	},
 #endif
 #if defined(LDM_PCI)
@@ -341,38 +334,17 @@ EXPORT_SYMBOL(gpsPVRLDMDev);
 #if defined(LDM_PLATFORM)
 #if defined(MODULE) && !defined(PVR_USE_PRE_REGISTERED_PLATFORM_DEV)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,2,0))
-/*static void PVRSRVDeviceRelease(struct device unref__ *pDevice)
+static void PVRSRVDeviceRelease(struct device unref__ *pDevice)
 {
 }
 
-static struct platform_device powervr_device = {
+static struct platform_device powervr_device =
+{
 	.name			= DEVNAME,
-	.id				= -1,
+	.id			= -1,
 	.dev 			= {
 		.release	= PVRSRVDeviceRelease
 	}
-};*/
-//time:2012-09-08
-//move platform_device_register from devices.c to sgx
-static struct resource resources_sgx[] = {
-    [0] = {
-        .name  = "gpu_irq",
-        .start     = IRQ_GPU,
-        .end    = IRQ_GPU,
-        .flags  = IORESOURCE_IRQ,
-    },
-    [1] = {
-        .name   = "gpu_base",
-        .start  = RK30_GPU_PHYS ,
-        .end    = RK30_GPU_PHYS  + RK30_GPU_SIZE - 1,
-        .flags  = IORESOURCE_MEM,
-    },
-};
-static struct platform_device powervr_device = {
-    .name             = DEVNAME,
-    .id               = 0,
-    .num_resources    = ARRAY_SIZE(resources_sgx),
-    .resource         = resources_sgx,
 };
 #else
 static struct platform_device_info powervr_device_info =
@@ -810,7 +782,7 @@ CONNECTION_DATA *LinuxConnectionFromFile(struct file *pFile)
 {
 	PVRSRV_FILE_PRIVATE_DATA *psPrivateData = PRIVATE_DATA(pFile);
 
-	return (psPrivateData == IMG_NULL) ? IMG_NULL : psPrivateData->pvConnectionData;
+	return psPrivateData->pvConnectionData;
 }
 
 struct file *LinuxFileFromEnvConnection(ENV_CONNECTION_DATA *psEnvConnection)
@@ -938,9 +910,6 @@ static int __init PVRCore_Init(void)
 	PVRDPFInit();
 
 	PVR_TRACE(("PVRCore_Init"));
-
-	//zxl:print gpu version on boot time
-	printk("PVR_K: sys.gpvr.version=%s\n",RKVERSION);
 
 #if defined(SUPPORT_DRM)
 #if defined(PDUMP)
